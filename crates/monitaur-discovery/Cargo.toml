@@ -6,3 +6,7 @@ description = "Infrastructure discovery engine"
 
 [dependencies]
 monitaur-core = { path = "../monitaur-core" }
+bollard = "0.18"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+thiserror = "2"

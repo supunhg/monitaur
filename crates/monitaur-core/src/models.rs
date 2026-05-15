@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::SystemTime;
 
 // ---------------------------------------------------------------------------
@@ -41,13 +42,31 @@ pub enum ExposureState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ServiceClass {
+    Database,
+    Cache,
+    ReverseProxy,
+    WebApp,
+    Worker,
+    Messaging,
+    Monitoring,
+    Security,
+    Utility,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Service {
     pub id: String,
     pub name: String,
+    pub image: Option<String>,
     pub service_type: ServiceType,
+    pub class: ServiceClass,
     pub ports: Vec<Port>,
     pub networks: Vec<String>,
     pub health: Health,
+    pub status: String,
+    pub labels: HashMap<String, String>,
     pub exposure_state: ExposureState,
 }
 
