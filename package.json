@@ -1,0 +1,9 @@
+{
+  "name": "monitaur",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter frontend dev",
+    "build": "pnpm --filter frontend build",
+    "preview": "pnpm --filter frontend preview"
+  }
+}
