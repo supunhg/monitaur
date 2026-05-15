@@ -5,6 +5,7 @@ use monitaur_monitoring::MonitoringEngine;
 use monitaur_network::NetworkIntelligenceEngine;
 use monitaur_persistence::PersistenceEngine;
 use monitaur_security::SecurityEngine;
+use monitaur_visualization::VisualizationEngine;
 use tracing::info;
 
 #[tokio::main]
@@ -142,6 +143,23 @@ async fn main() -> EngineResult<()> {
         Err(e) => {
             println!("  Network analysis failed: {e}");
         }
+    }
+
+    // ── Visualization ─────────────────────────────────────────
+    let viz = VisualizationEngine::new();
+    let topology = viz.render(&graph);
+
+    println!("\n=== Visualization ===");
+    println!(
+        "  Topology: {} nodes, {} edges, {} groups",
+        topology.nodes.len(),
+        topology.edges.len(),
+        topology.groups.len(),
+    );
+    println!("  Layers:");
+    for (i, layer) in topology.layers.iter().enumerate() {
+        let count = topology.nodes.iter().filter(|n| n.layer == i).count();
+        println!("    {i}. {layer}: {count} nodes");
     }
 
     // ── Metadata Status ────────────────────────────────────────
