@@ -6,7 +6,7 @@ use std::time::SystemTime;
 // Service
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ServiceType {
     Container,
     Process,
@@ -41,7 +41,7 @@ pub enum ExposureState {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ServiceClass {
     Database,
     Cache,

@@ -1,5 +1,6 @@
 use monitaur_core::error::EngineResult;
 use monitaur_discovery::DiscoveryEngine;
+use monitaur_metadata::MetadataEngine;
 use monitaur_monitoring::MonitoringEngine;
 use monitaur_network::NetworkIntelligenceEngine;
 use monitaur_persistence::PersistenceEngine;
@@ -15,9 +16,13 @@ async fn main() -> EngineResult<()> {
     // ── Persistence ────────────────────────────────────────────
     let db = PersistenceEngine::open("monitaur.db")?;
 
+    // ── Metadata (in-memory state) ─────────────────────────────
+    let mut meta = MetadataEngine::new();
+
     // ── Discovery ──────────────────────────────────────────────
     let discovery = DiscoveryEngine::new();
     let graph = discovery.discover().await?;
+    meta.update(graph.clone());
 
     println!("\n=== Discovery ===");
     println!(
@@ -70,6 +75,7 @@ async fn main() -> EngineResult<()> {
     }
 
     db.save_metrics_snapshot(&snapshot)?;
+    meta.snapshot_metrics(snapshot);
 
     // ── Security Analysis ──────────────────────────────────────
     let security = SecurityEngine::new();
@@ -93,6 +99,7 @@ async fn main() -> EngineResult<()> {
         }
         println!("\n  Total: {} findings", findings.len());
     }
+    meta.snapshot_infra();
 
     // ── Network Intelligence ────────────────────────────────────
     let net = NetworkIntelligenceEngine::new();
@@ -136,6 +143,18 @@ async fn main() -> EngineResult<()> {
             println!("  Network analysis failed: {e}");
         }
     }
+
+    // ── Metadata Status ────────────────────────────────────────
+    let status = meta.status();
+    println!("\n=== Metadata Engine ===");
+    println!(
+        "  Cached: {} services, {} edges | Indexed: {} | Snapshots: {} infra, {} metrics",
+        status.services,
+        status.edges,
+        status.indexed,
+        status.infra_snapshots,
+        status.metrics_snapshots,
+    );
 
     println!("\nAll data persisted to monitaur.db — all systems nominal.");
     Ok(())
