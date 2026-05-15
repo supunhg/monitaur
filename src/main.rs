@@ -3,6 +3,7 @@ use monitaur_discovery::DiscoveryEngine;
 use monitaur_monitoring::MonitoringEngine;
 use monitaur_network::NetworkIntelligenceEngine;
 use monitaur_persistence::PersistenceEngine;
+use monitaur_security::SecurityEngine;
 use tracing::info;
 
 #[tokio::main]
@@ -69,6 +70,29 @@ async fn main() -> EngineResult<()> {
     }
 
     db.save_metrics_snapshot(&snapshot)?;
+
+    // ── Security Analysis ──────────────────────────────────────
+    let security = SecurityEngine::new();
+
+    println!("\n=== Security Findings ===");
+    let findings = security.analyze(&graph.services).await;
+    if findings.is_empty() {
+        println!("  No security findings — looking good!");
+    } else {
+        for finding in &findings {
+            println!(
+                "  [{:?}] {} — {}",
+                finding.severity, finding.title, finding.description
+            );
+            if let Some(remediation) = &finding.remediation {
+                println!("    fix: {remediation}");
+            }
+        }
+        for finding in &findings {
+            db.save_finding(finding)?;
+        }
+        println!("\n  Total: {} findings", findings.len());
+    }
 
     // ── Network Intelligence ────────────────────────────────────
     let net = NetworkIntelligenceEngine::new();

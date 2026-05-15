@@ -93,7 +93,7 @@ pub struct NetworkNode {
 // Security Finding
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum Severity {
     Critical,
     High,
