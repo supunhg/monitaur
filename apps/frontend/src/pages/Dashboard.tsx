@@ -1,6 +1,6 @@
 import { useScan, useMetrics, useNetwork } from '../hooks/use-queries'
 import { bytesToHuman } from '../lib/utils'
-import { Cpu, HardDrive, Network, Shield, Server, Activity } from 'lucide-react'
+import { Cpu, HardDrive, Network, Shield, Server, Activity, AlertTriangle } from 'lucide-react'
 
 export function Dashboard() {
   const scan = useScan()
@@ -17,8 +17,16 @@ export function Dashboard() {
 
   if (scan.error) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-red">Error: {(scan.error as Error).message}</div>
+      <div className="bg-surface-2 border border-red/20 rounded-xl p-8 text-center space-y-3">
+        <AlertTriangle size={40} className="mx-auto text-red" />
+        <p className="text-sm text-red">Failed to connect to API</p>
+        <p className="text-xs text-zinc-500">{(scan.error as Error).message}</p>
+        <button
+          onClick={() => scan.refetch()}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-accent/10 border border-accent/30 text-accent-hover rounded-lg hover:bg-accent/20 transition-colors"
+        >
+          Retry
+        </button>
       </div>
     )
   }
@@ -27,6 +35,9 @@ export function Dashboard() {
 
   const { discovery, security, visualization } = scan.data
   const netAnalysis = network.data
+  const sysMetrics = metrics.data?.system
+  const metricsError = metrics.error
+  const networkError = network.error
 
   const cards = [
     {
@@ -45,21 +56,21 @@ export function Dashboard() {
     },
     {
       label: 'CPU',
-      value: metrics.data?.system ? `${metrics.data.system.cpu_percent.toFixed(1)}%` : '—',
-      sub: 'current usage',
+      value: sysMetrics ? `${sysMetrics.cpu_percent.toFixed(1)}%` : metricsError ? 'Error' : '—',
+      sub: metricsError ? 'Connection failed' : 'current usage',
       icon: Cpu,
-      color: 'text-accent-hover',
+      color: metricsError ? 'text-red' : 'text-accent-hover',
     },
     {
       label: 'Memory',
-      value: metrics.data?.system
-        ? `${metrics.data.system.memory_percent.toFixed(1)}%`
-        : '—',
-      sub: metrics.data?.system
-        ? `${bytesToHuman(metrics.data.system.memory_used_bytes)} / ${bytesToHuman(metrics.data.system.memory_total_bytes)}`
-        : '',
+      value: sysMetrics ? `${sysMetrics.memory_percent.toFixed(1)}%` : metricsError ? 'Error' : '—',
+      sub: sysMetrics
+        ? `${bytesToHuman(sysMetrics.memory_used_bytes)} / ${bytesToHuman(sysMetrics.memory_total_bytes)}`
+        : metricsError
+          ? 'Connection failed'
+          : '',
       icon: HardDrive,
-      color: 'text-yellow',
+      color: metricsError ? 'text-red' : 'text-yellow',
     },
   ]
 
@@ -93,40 +104,34 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* System Metrics live */}
         <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
           <h2 className="text-sm font-medium text-zinc-300">Live System Metrics</h2>
-          {metrics.data?.system ? (
+          {metricsError ? (
+            <p className="text-sm text-red">
+              Metrics unavailable: {(metricsError as Error).message}
+            </p>
+          ) : sysMetrics ? (
             <div className="space-y-3">
-              <MetricBar
-                label="CPU"
-                value={metrics.data.system.cpu_percent}
-                color="bg-accent-hover"
-              />
-              <MetricBar
-                label="Memory"
-                value={metrics.data.system.memory_percent}
-                color="bg-yellow"
-              />
+              <MetricBar label="CPU" value={sysMetrics.cpu_percent} color="bg-accent-hover" />
+              <MetricBar label="Memory" value={sysMetrics.memory_percent} color="bg-yellow" />
               <div className="flex justify-between text-xs">
                 <span className="text-zinc-500">Network ↓</span>
                 <span className="text-zinc-300 font-mono">
-                  {bytesToHuman(metrics.data.system.network_rx_bytes)}
+                  {bytesToHuman(sysMetrics.network_rx_bytes)}
                 </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-zinc-500">Network ↑</span>
                 <span className="text-zinc-300 font-mono">
-                  {bytesToHuman(metrics.data.system.network_tx_bytes)}
+                  {bytesToHuman(sysMetrics.network_tx_bytes)}
                 </span>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-zinc-500">No metrics available</p>
+            <p className="text-sm text-zinc-500">Waiting for metrics...</p>
           )}
         </div>
 
-        {/* Security Findings */}
         <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
           <h2 className="text-sm font-medium text-zinc-300">Recent Security Findings</h2>
           {security.length === 0 ? (
@@ -154,10 +159,13 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Network Activity live */}
         <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
           <h2 className="text-sm font-medium text-zinc-300">Live Connections</h2>
-          {!netAnalysis || netAnalysis.connections.length === 0 ? (
+          {networkError ? (
+            <p className="text-sm text-red">
+              Network data unavailable: {(networkError as Error).message}
+            </p>
+          ) : !netAnalysis || netAnalysis.connections.length === 0 ? (
             <p className="text-sm text-zinc-500">No active connections</p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -177,7 +185,6 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Service Classes */}
         <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
           <h2 className="text-sm font-medium text-zinc-300">Services by Class</h2>
           <div className="flex flex-wrap gap-2">
@@ -207,15 +214,7 @@ export function Dashboard() {
   )
 }
 
-function MetricBar({
-  label,
-  value,
-  color,
-}: {
-  label: string
-  value: number
-  color: string
-}) {
+function MetricBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div>
       <div className="flex justify-between text-xs mb-1">
@@ -231,5 +230,3 @@ function MetricBar({
     </div>
   )
 }
-
-

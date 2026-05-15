@@ -32,6 +32,22 @@ export function CytoscapeGraph({ graph }: Props) {
   const [selectedNode, setSelectedNode] = useState<TopologyNode | null>(null)
   const [layout, setLayout] = useState<'preset' | 'breadthfirst' | 'concentric'>('preset')
 
+  if (!graph || !graph.nodes || !graph.edges) {
+    return (
+      <div className="w-full h-[500px] bg-surface rounded-xl border border-zinc-800 flex items-center justify-center">
+        <p className="text-sm text-zinc-500">No topology data available</p>
+      </div>
+    )
+  }
+
+  if (graph.nodes.length === 0) {
+    return (
+      <div className="w-full h-[500px] bg-surface rounded-xl border border-zinc-800 flex items-center justify-center">
+        <p className="text-sm text-zinc-500">Empty topology — no nodes to display</p>
+      </div>
+    )
+  }
+
   const buildElements = useCallback(() => {
     const elements: cytoscape.ElementDefinition[] = []
 

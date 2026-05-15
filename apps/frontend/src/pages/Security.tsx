@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSecurity } from '../hooks/use-queries'
-import { Shield, ChevronDown, ChevronUp } from 'lucide-react'
+import { Shield, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 
 type Severity = 'Critical' | 'High' | 'Medium' | 'Low' | 'Info'
 
@@ -15,7 +15,7 @@ const severityColor: Record<Severity, string> = {
 }
 
 export function Security() {
-  const { data: findings, isLoading } = useSecurity()
+  const { data: findings, isLoading, error, refetch } = useSecurity()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [filter, setFilter] = useState<Severity | 'All'>('All')
 
@@ -23,6 +23,23 @@ export function Security() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-pulse text-zinc-500">Analyzing security...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-surface-2 border border-red/20 rounded-xl p-8 text-center space-y-3">
+        <Shield size={40} className="mx-auto text-red" />
+        <p className="text-sm text-red">Failed to load security findings</p>
+        <p className="text-xs text-zinc-500">{(error as Error).message}</p>
+        <button
+          onClick={() => refetch()}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-accent/10 border border-accent/30 text-accent-hover rounded-lg hover:bg-accent/20 transition-colors"
+        >
+          <RefreshCw size={14} />
+          Retry
+        </button>
       </div>
     )
   }
@@ -39,9 +56,15 @@ export function Security() {
             {findings?.length ?? 0} total findings
           </p>
         </div>
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+        >
+          <RefreshCw size={14} />
+          Refresh
+        </button>
       </div>
 
-      {/* Filter chips */}
       <div className="flex flex-wrap gap-2">
         {(['All', ...severityOrder] as const).map((s) => (
           <button
@@ -63,7 +86,6 @@ export function Security() {
         ))}
       </div>
 
-      {/* Findings list */}
       <div className="space-y-2">
         {filtered.length === 0 ? (
           <div className="bg-surface-2 border border-zinc-800 rounded-xl p-8 text-center">
@@ -81,9 +103,7 @@ export function Security() {
                 className="w-full flex items-center gap-3 p-4 text-left hover:bg-zinc-800/30 transition-colors"
               >
                 <div
-                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                    severityColor[f.severity]
-                  }`}
+                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${severityColor[f.severity]}`}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-zinc-200 truncate">

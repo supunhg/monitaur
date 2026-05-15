@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useScan, useService } from '../hooks/use-queries'
-import { Server, Search, X } from 'lucide-react'
+import { Server, Search, X, RefreshCw, AlertTriangle } from 'lucide-react'
 
 export function Services() {
-  const { data, isLoading } = useScan()
+  const { data, isLoading, error, refetch } = useScan()
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -11,6 +11,23 @@ export function Services() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-pulse text-zinc-500">Loading services...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-surface-2 border border-red/20 rounded-xl p-8 text-center space-y-3">
+        <AlertTriangle size={40} className="mx-auto text-red" />
+        <p className="text-sm text-red">Failed to load services</p>
+        <p className="text-xs text-zinc-500">{(error as Error).message}</p>
+        <button
+          onClick={() => refetch()}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-accent/10 border border-accent/30 text-accent-hover rounded-lg hover:bg-accent/20 transition-colors"
+        >
+          <RefreshCw size={14} />
+          Retry
+        </button>
       </div>
     )
   }
@@ -26,12 +43,20 @@ export function Services() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Services</h1>
-        <p className="text-sm text-zinc-500 mt-1">{services.length} total</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Services</h1>
+          <p className="text-sm text-zinc-500 mt-1">{services.length} total</p>
+        </div>
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+        >
+          <RefreshCw size={14} />
+          Refresh
+        </button>
       </div>
 
-      {/* Search */}
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
         <input
@@ -51,12 +76,13 @@ export function Services() {
         )}
       </div>
 
-      {/* Service cards */}
       <div className="space-y-2">
         {filtered.length === 0 ? (
           <div className="bg-surface-2 border border-zinc-800 rounded-xl p-8 text-center">
             <Server size={32} className="mx-auto text-zinc-600 mb-2" />
-            <p className="text-sm text-zinc-500">No services match your search</p>
+            <p className="text-sm text-zinc-500">
+              {search ? 'No services match your search' : 'No services discovered'}
+            </p>
           </div>
         ) : (
           filtered.map((s) => (
@@ -97,9 +123,7 @@ export function Services() {
                 </div>
               </div>
 
-              {selectedId === s.id && (
-                <ServiceDetail serviceId={s.id} />
-              )}
+              {selectedId === s.id && <ServiceDetail serviceId={s.id} />}
             </button>
           ))
         )}
@@ -109,13 +133,23 @@ export function Services() {
 }
 
 function ServiceDetail({ serviceId }: { serviceId: string }) {
-  const { data: service } = useService(serviceId)
+  const { data: service, isLoading } = useService(serviceId)
+
+  if (isLoading) {
+    return (
+      <div className="mt-4 pt-4 border-t border-zinc-800/50">
+        <div className="animate-pulse space-y-3">
+          <div className="h-3 bg-zinc-800 rounded w-16" />
+          <div className="h-8 bg-zinc-800 rounded w-full" />
+        </div>
+      </div>
+    )
+  }
 
   if (!service) return null
 
   return (
     <div className="mt-4 pt-4 border-t border-zinc-800/50 space-y-4">
-      {/* Ports */}
       <div>
         <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
           Ports
@@ -140,7 +174,6 @@ function ServiceDetail({ serviceId }: { serviceId: string }) {
         </div>
       </div>
 
-      {/* Networks */}
       <div>
         <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
           Networks
@@ -160,7 +193,6 @@ function ServiceDetail({ serviceId }: { serviceId: string }) {
         </div>
       </div>
 
-      {/* Labels */}
       {Object.keys(service.labels).length > 0 && (
         <div>
           <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">
