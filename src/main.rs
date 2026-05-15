@@ -1,3 +1,9 @@
+mod api;
+mod app_state;
+
+use std::net::SocketAddr;
+
+use clap::{Parser, Subcommand};
 use monitaur_core::error::EngineResult;
 use monitaur_discovery::DiscoveryEngine;
 use monitaur_metadata::MetadataEngine;
@@ -8,185 +14,129 @@ use monitaur_security::SecurityEngine;
 use monitaur_visualization::VisualizationEngine;
 use tracing::info;
 
+use crate::api::create_router;
+use crate::app_state::AppState;
+
+#[derive(Parser)]
+#[command(
+    name = "monitaur",
+    about = "Local-first infrastructure intelligence platform"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Run a one-shot analysis scan
+    Scan {
+        #[arg(long, default_value = "monitaur.db")]
+        db: String,
+    },
+    /// Start the HTTP API server
+    Serve {
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+        #[arg(long, default_value = "monitaur.db")]
+        db: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> EngineResult<()> {
     tracing_subscriber::fmt::init();
 
-    info!("Monitaur v{} starting", env!("CARGO_PKG_VERSION"));
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Scan { db } => cmd_scan(&db).await,
+        Commands::Serve { port, db } => cmd_serve(port, &db).await,
+    }
+}
 
-    // ── Persistence ────────────────────────────────────────────
-    let db = PersistenceEngine::open("monitaur.db")?;
+// ── Scan ───────────────────────────────────────────────────────
 
-    // ── Metadata (in-memory state) ─────────────────────────────
+async fn cmd_scan(db_path: &str) -> EngineResult<()> {
+    info!("Monitaur v{} scan starting", env!("CARGO_PKG_VERSION"));
+
+    let db = PersistenceEngine::open(db_path)?;
     let mut meta = MetadataEngine::new();
 
-    // ── Discovery ──────────────────────────────────────────────
+    // Discovery
     let discovery = DiscoveryEngine::new();
     let graph = discovery.discover().await?;
     meta.update(graph.clone());
-
-    println!("\n=== Discovery ===");
-    println!(
-        "Services: {} | Networks: {} | Edges: {}",
-        graph.services.len(),
-        graph.network_nodes.len(),
-        graph.edges.len()
-    );
-
-    for service in &graph.services {
-        println!(
-            "  {} [{}] {:?} ({:?})",
-            service.name, service.status, service.class, service.health
-        );
-        if let Some(image) = &service.image {
-            println!("    image: {image}");
-        }
-        for port in &service.ports {
-            println!(
-                "    port {}/{:?} exposed:{}",
-                port.port, port.protocol, port.exposed
-            );
-        }
-        if !service.networks.is_empty() {
-            println!("    networks: {}", service.networks.join(", "));
-        }
-    }
-
     db.save_infra_graph(&graph)?;
 
-    // ── Monitoring ─────────────────────────────────────────────
+    println!(
+        "\n=== Discovery: {} services, {} networks, {} edges ===",
+        graph.services.len(),
+        graph.network_nodes.len(),
+        graph.edges.len(),
+    );
+
+    // Monitoring
     let mut monitoring = MonitoringEngine::new().with_poll_interval(5);
-
-    println!("\n=== System Metrics ===");
     let snapshot = monitoring.snapshot(&graph.services).await?;
-
-    if let Some(sys) = &snapshot.system {
-        println!("  CPU:        {:.1}%", sys.cpu_percent);
-        println!(
-            "  Memory:     {:.1}% ({}/{})",
-            sys.memory_percent,
-            bytes_to_human(sys.memory_used_bytes),
-            bytes_to_human(sys.memory_total_bytes),
-        );
-        println!(
-            "  Network:    ↓{} / ↑{}",
-            bytes_to_human(sys.network_rx_bytes),
-            bytes_to_human(sys.network_tx_bytes),
-        );
-    }
-
     db.save_metrics_snapshot(&snapshot)?;
     meta.snapshot_metrics(snapshot);
 
-    // ── Security Analysis ──────────────────────────────────────
+    // Security
     let security = SecurityEngine::new();
-
-    println!("\n=== Security Findings ===");
     let findings = security.analyze(&graph.services).await;
-    if findings.is_empty() {
-        println!("  No security findings — looking good!");
-    } else {
-        for finding in &findings {
-            println!(
-                "  [{:?}] {} — {}",
-                finding.severity, finding.title, finding.description
-            );
-            if let Some(remediation) = &finding.remediation {
-                println!("    fix: {remediation}");
-            }
-        }
-        for finding in &findings {
-            db.save_finding(finding)?;
-        }
-        println!("\n  Total: {} findings", findings.len());
+    for finding in &findings {
+        db.save_finding(finding)?;
     }
     meta.snapshot_infra();
 
-    // ── Network Intelligence ────────────────────────────────────
-    let net = NetworkIntelligenceEngine::new();
-
-    println!("\n=== Network Intelligence ===");
-    match net.analyze() {
-        Ok(analysis) => {
-            if analysis.connections.is_empty() {
-                println!("  No active outbound TCP connections");
-            } else {
-                println!("  Active Connections: {}", analysis.connections.len());
-                for conn in &analysis.connections[..analysis.connections.len().min(15)] {
-                    let container_tag = conn
-                        .container_id
-                        .as_ref()
-                        .map(|id| format!(" [{}]", &id[..12]))
-                        .unwrap_or_default();
-                    println!(
-                        "    {}:{} → {}:{}{container_tag}",
-                        conn.local_addr, conn.local_port, conn.remote_addr, conn.remote_port,
-                    );
-                }
-                if analysis.connections.len() > 15 {
-                    println!("    ... and {} more", analysis.connections.len() - 15);
-                }
-            }
-
-            if !analysis.flows.is_empty() {
-                println!("\n  Traffic Flows:");
-                for flow in &analysis.flows {
-                    println!(
-                        "    {}:{} ({:?}) — {} conns",
-                        flow.destination, flow.port, flow.class, flow.connection_count,
-                    );
-                }
-            }
-
-            db.save_network_analysis(&analysis)?;
-        }
-        Err(e) => {
-            println!("  Network analysis failed: {e}");
-        }
+    println!("  Security: {} findings", findings.len());
+    for f in &findings {
+        println!("    [{:?}] {} — {}", f.severity, f.title, f.description);
     }
 
-    // ── Visualization ─────────────────────────────────────────
-    let viz = VisualizationEngine::new();
-    let topology = viz.render(&graph);
+    // Network
+    if let Ok(analysis) = NetworkIntelligenceEngine::new().analyze() {
+        db.save_network_analysis(&analysis)?;
+        println!("  Network: {} connections", analysis.connections.len());
+    }
 
-    println!("\n=== Visualization ===");
+    // Visualization
+    let topology = VisualizationEngine::new().render(&graph);
     println!(
         "  Topology: {} nodes, {} edges, {} groups",
         topology.nodes.len(),
         topology.edges.len(),
         topology.groups.len(),
     );
-    println!("  Layers:");
-    for (i, layer) in topology.layers.iter().enumerate() {
-        let count = topology.nodes.iter().filter(|n| n.layer == i).count();
-        println!("    {i}. {layer}: {count} nodes");
-    }
 
-    // ── Metadata Status ────────────────────────────────────────
     let status = meta.status();
-    println!("\n=== Metadata Engine ===");
     println!(
-        "  Cached: {} services, {} edges | Indexed: {} | Snapshots: {} infra, {} metrics",
-        status.services,
-        status.edges,
-        status.indexed,
-        status.infra_snapshots,
-        status.metrics_snapshots,
+        "  Metadata: {} cached, {} infra snapshots, {} metrics snapshots",
+        status.services, status.infra_snapshots, status.metrics_snapshots,
     );
 
-    println!("\nAll data persisted to monitaur.db — all systems nominal.");
+    println!("\nScan complete — all data written to {db_path}");
     Ok(())
 }
 
-fn bytes_to_human(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = bytes as f64;
-    let mut unit_idx = 0;
+// ── Serve ──────────────────────────────────────────────────────
 
-    while size > 1024.0 && unit_idx < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_idx += 1;
-    }
+async fn cmd_serve(port: u16, db_path: &str) -> EngineResult<()> {
+    info!("Monitaur API server starting on port {port}");
 
-    format!("{:.1} {}", size, UNITS[unit_idx])
+    let state = AppState::new(db_path)?;
+    let app = create_router(state);
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    info!("Listening on http://{addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| monitaur_core::error::EngineError::Io(format!("Failed to bind: {e}")))?;
+
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| monitaur_core::error::EngineError::Io(format!("Server error: {e}")))?;
+
+    Ok(())
 }
