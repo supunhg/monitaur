@@ -13,15 +13,20 @@ pub struct AppState {
     pub db: Mutex<PersistenceEngine>,
     pub monitoring: Mutex<MonitoringEngine>,
     pub metadata: Mutex<MetadataEngine>,
+    pub auth_enabled: bool,
 }
 
 impl AppState {
-    pub fn new(db_path: &str) -> Result<Arc<Self>, monitaur_core::error::EngineError> {
+    pub fn new(
+        db_path: &str,
+        auth_enabled: bool,
+    ) -> Result<Arc<Self>, monitaur_core::error::EngineError> {
         let db = PersistenceEngine::open(db_path)?;
         Ok(Arc::new(Self {
             db: Mutex::new(db),
             monitoring: Mutex::new(MonitoringEngine::new().with_poll_interval(5)),
             metadata: Mutex::new(MetadataEngine::new()),
+            auth_enabled,
         }))
     }
 

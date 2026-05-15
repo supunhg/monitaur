@@ -117,6 +117,25 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
         conn.execute("INSERT INTO schema_version (version) VALUES (1)", [])?;
     }
 
-    info!("Database schema at version 1");
+    if version < 2 {
+        info!("Running auth schema migration (v2)");
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS auth_config (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                password_hash TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS auth_tokens (
+                token TEXT PRIMARY KEY,
+                created_at INTEGER NOT NULL
+            );",
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version (version) VALUES (2)",
+            [],
+        )?;
+    }
+
+    info!("Database schema at version 2");
     Ok(())
 }

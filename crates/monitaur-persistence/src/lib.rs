@@ -32,4 +32,26 @@ impl PersistenceEngine {
     pub fn save_finding(&self, finding: &SecurityFinding) -> EngineResult<()> {
         self.store.save_finding(finding)
     }
+
+    // ── Auth ──────────────────────────────────────────────────
+
+    pub fn has_admin(&self) -> rusqlite::Result<bool> {
+        self.store.has_admin()
+    }
+
+    pub fn set_password(&self, hash: &str) -> EngineResult<()> {
+        self.store.set_password(hash)
+    }
+
+    pub fn get_password_hash(&self) -> Option<String> {
+        self.store.get_password_hash()
+    }
+
+    pub fn create_token(&self, token: &str) -> EngineResult<()> {
+        self.store.create_token(token)
+    }
+
+    pub fn validate_token(&self, token: &str) -> rusqlite::Result<bool> {
+        self.store.validate_token(token)
+    }
 }

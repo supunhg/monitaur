@@ -231,4 +231,58 @@ impl SqliteStore {
 
         Ok(())
     }
+
+    // ── Auth ──────────────────────────────────────────────────
+
+    pub fn has_admin(&self) -> rusqlite::Result<bool> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM auth_config", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map(|count| count > 0)
+    }
+
+    pub fn set_password(&self, hash: &str) -> EngineResult<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO auth_config (id, password_hash) VALUES (1, ?1)",
+                rusqlite::params![hash],
+            )
+            .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn get_password_hash(&self) -> Option<String> {
+        self.conn
+            .query_row(
+                "SELECT password_hash FROM auth_config WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .ok()
+    }
+
+    pub fn create_token(&self, token: &str) -> EngineResult<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        self.conn
+            .execute(
+                "INSERT INTO auth_tokens (token, created_at) VALUES (?1, ?2)",
+                rusqlite::params![token, now],
+            )
+            .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
+        Ok(())
+    }
+
+    pub fn validate_token(&self, token: &str) -> rusqlite::Result<bool> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM auth_tokens WHERE token = ?1",
+                rusqlite::params![token],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|count| count > 0)
+    }
 }

@@ -1,5 +1,6 @@
 mod api;
 mod app_state;
+mod auth;
 
 use std::net::SocketAddr;
 
@@ -40,6 +41,9 @@ enum Commands {
         port: u16,
         #[arg(long, default_value = "monitaur.db")]
         db: String,
+        /// Enable API authentication (optional, off by default)
+        #[arg(long, default_value_t = false)]
+        auth: bool,
     },
 }
 
@@ -50,7 +54,7 @@ async fn main() -> EngineResult<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Scan { db } => cmd_scan(&db).await,
-        Commands::Serve { port, db } => cmd_serve(port, &db).await,
+        Commands::Serve { port, db, auth } => cmd_serve(port, &db, auth).await,
     }
 }
 
@@ -121,10 +125,13 @@ async fn cmd_scan(db_path: &str) -> EngineResult<()> {
 
 // ── Serve ──────────────────────────────────────────────────────
 
-async fn cmd_serve(port: u16, db_path: &str) -> EngineResult<()> {
+async fn cmd_serve(port: u16, db_path: &str, auth: bool) -> EngineResult<()> {
+    if auth {
+        info!("API authentication enabled");
+    }
     info!("Monitaur API server starting on port {port}");
 
-    let state = AppState::new(db_path)?;
+    let state = AppState::new(db_path, auth)?;
     let app = create_router(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
