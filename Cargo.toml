@@ -9,6 +9,7 @@ members = [
     "crates/monitaur-visualization",
     "crates/monitaur-metadata",
     "crates/monitaur-persistence",
+    # "src-tauri",  # Requires: sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
 ]
 
 [package]

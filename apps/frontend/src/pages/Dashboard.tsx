@@ -1,11 +1,13 @@
-import { useScan } from '../hooks/use-queries'
+import { useScan, useMetrics, useNetwork } from '../hooks/use-queries'
 import { bytesToHuman } from '../lib/utils'
-import { Cpu, MemoryStick, Network, Shield, Server } from 'lucide-react'
+import { Cpu, HardDrive, Network, Shield, Server, Activity } from 'lucide-react'
 
 export function Dashboard() {
-  const { data, isLoading, error } = useScan()
+  const scan = useScan()
+  const metrics = useMetrics(true)
+  const network = useNetwork(true)
 
-  if (isLoading) {
+  if (scan.isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-pulse text-zinc-500">Scanning infrastructure...</div>
@@ -13,17 +15,18 @@ export function Dashboard() {
     )
   }
 
-  if (error) {
+  if (scan.error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-red">Error: {(error as Error).message}</div>
+        <div className="text-red">Error: {(scan.error as Error).message}</div>
       </div>
     )
   }
 
-  if (!data) return null
+  if (!scan.data) return null
 
-  const { discovery, security, network, visualization } = data
+  const { discovery, security, visualization } = scan.data
+  const netAnalysis = network.data
 
   const cards = [
     {
@@ -41,26 +44,36 @@ export function Dashboard() {
       color: security.length > 0 ? 'text-red' : 'text-green',
     },
     {
-      label: 'Network Flows',
-      value: network.flows.length.toString(),
-      sub: `${network.connections.length} active connections`,
-      icon: Network,
+      label: 'CPU',
+      value: metrics.data?.system ? `${metrics.data.system.cpu_percent.toFixed(1)}%` : '—',
+      sub: 'current usage',
+      icon: Cpu,
       color: 'text-accent-hover',
     },
     {
-      label: 'Topology',
-      value: visualization.nodes.length.toString(),
-      sub: `${visualization.edges.length} edges`,
-      icon: Cpu,
+      label: 'Memory',
+      value: metrics.data?.system
+        ? `${metrics.data.system.memory_percent.toFixed(1)}%`
+        : '—',
+      sub: metrics.data?.system
+        ? `${bytesToHuman(metrics.data.system.memory_used_bytes)} / ${bytesToHuman(metrics.data.system.memory_total_bytes)}`
+        : '',
+      icon: HardDrive,
       color: 'text-yellow',
     },
   ]
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-zinc-500 mt-1">Infrastructure overview</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-zinc-500 mt-1">Infrastructure overview</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-zinc-500">
+          <Activity size={14} />
+          <span>Live</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -80,6 +93,39 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* System Metrics live */}
+        <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
+          <h2 className="text-sm font-medium text-zinc-300">Live System Metrics</h2>
+          {metrics.data?.system ? (
+            <div className="space-y-3">
+              <MetricBar
+                label="CPU"
+                value={metrics.data.system.cpu_percent}
+                color="bg-accent-hover"
+              />
+              <MetricBar
+                label="Memory"
+                value={metrics.data.system.memory_percent}
+                color="bg-yellow"
+              />
+              <div className="flex justify-between text-xs">
+                <span className="text-zinc-500">Network ↓</span>
+                <span className="text-zinc-300 font-mono">
+                  {bytesToHuman(metrics.data.system.network_rx_bytes)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-zinc-500">Network ↑</span>
+                <span className="text-zinc-300 font-mono">
+                  {bytesToHuman(metrics.data.system.network_tx_bytes)}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">No metrics available</p>
+          )}
+        </div>
+
         {/* Security Findings */}
         <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
           <h2 className="text-sm font-medium text-zinc-300">Recent Security Findings</h2>
@@ -105,15 +151,17 @@ export function Dashboard() {
             </div>
           )}
         </div>
+      </div>
 
-        {/* Network Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Network Activity live */}
         <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
-          <h2 className="text-sm font-medium text-zinc-300">Network Activity</h2>
-          {network.connections.length === 0 ? (
+          <h2 className="text-sm font-medium text-zinc-300">Live Connections</h2>
+          {!netAnalysis || netAnalysis.connections.length === 0 ? (
             <p className="text-sm text-zinc-500">No active connections</p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {network.connections.slice(0, 10).map((c, i) => (
+              {netAnalysis.connections.slice(0, 10).map((c, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm">
                   <div className="w-2 h-2 rounded-full bg-green shrink-0" />
                   <span className="text-zinc-400 font-mono text-xs">
@@ -128,33 +176,60 @@ export function Dashboard() {
             </div>
           )}
         </div>
-      </div>
 
-      {/* Service Classes */}
-      <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
-        <h2 className="text-sm font-medium text-zinc-300">Services by Class</h2>
-        <div className="flex flex-wrap gap-2">
-          {discovery.services
-            .reduce(
-              (acc, s) => {
-                const existing = acc.find((a) => a.class === s.class)
-                if (existing) existing.count++
-                else acc.push({ class: s.class, count: 1 })
-                return acc
-              },
-              [] as { class: string; count: number }[],
-            )
-            .map((g) => (
-              <div
-                key={g.class}
-                className="bg-surface-3 border border-zinc-700/50 rounded-lg px-3 py-1.5 text-sm"
-              >
-                <span className="text-zinc-400">{g.class}</span>
-                <span className="text-zinc-600 ml-2">{g.count}</span>
-              </div>
-            ))}
+        {/* Service Classes */}
+        <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
+          <h2 className="text-sm font-medium text-zinc-300">Services by Class</h2>
+          <div className="flex flex-wrap gap-2">
+            {discovery.services
+              .reduce(
+                (acc, s) => {
+                  const existing = acc.find((a) => a.class === s.class)
+                  if (existing) existing.count++
+                  else acc.push({ class: s.class, count: 1 })
+                  return acc
+                },
+                [] as { class: string; count: number }[],
+              )
+              .map((g) => (
+                <div
+                  key={g.class}
+                  className="bg-surface-3 border border-zinc-700/50 rounded-lg px-3 py-1.5 text-sm"
+                >
+                  <span className="text-zinc-400">{g.class}</span>
+                  <span className="text-zinc-600 ml-2">{g.count}</span>
+                </div>
+              ))}
+          </div>
         </div>
       </div>
     </div>
   )
 }
+
+function MetricBar({
+  label,
+  value,
+  color,
+}: {
+  label: string
+  value: number
+  color: string
+}) {
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-zinc-500">{label}</span>
+        <span className="text-zinc-300 font-mono">{value.toFixed(1)}%</span>
+      </div>
+      <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${color}`}
+          style={{ width: `${Math.min(value, 100)}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+

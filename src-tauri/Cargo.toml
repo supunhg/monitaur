@@ -1,0 +1,30 @@
+[package]
+name = "monitaur-desktop"
+version = "0.1.0"
+edition = "2024"
+description = "Monitaur Desktop"
+
+[lib]
+name = "monitaur_desktop"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+monitaur-core = { path = "../crates/monitaur-core" }
+monitaur-discovery = { path = "../crates/monitaur-discovery" }
+monitaur-monitoring = { path = "../crates/monitaur-monitoring" }
+monitaur-security = { path = "../crates/monitaur-security" }
+monitaur-network = { path = "../crates/monitaur-network" }
+monitaur-visualization = { path = "../crates/monitaur-visualization" }
+monitaur-metadata = { path = "../crates/monitaur-metadata" }
+monitaur-persistence = { path = "../crates/monitaur-persistence" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors"] }
+tracing = "0.1"

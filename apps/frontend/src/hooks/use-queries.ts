@@ -25,11 +25,12 @@ export function useService(id: string) {
   })
 }
 
-export function useMetrics() {
+export function useMetrics(poll = false) {
   return useQuery({
     queryKey: ['metrics'],
     queryFn: api.metrics,
-    staleTime: 15_000,
+    staleTime: 10_000,
+    refetchInterval: poll ? 10_000 : false,
   })
 }
 
@@ -41,11 +42,12 @@ export function useSecurity() {
   })
 }
 
-export function useNetwork() {
+export function useNetwork(poll = false) {
   return useQuery({
     queryKey: ['network'],
     queryFn: api.network,
     staleTime: 15_000,
+    refetchInterval: poll ? 15_000 : false,
   })
 }
 
