@@ -1,0 +1,8 @@
+[package]
+name = "monitaur-visualization"
+version = "0.1.0"
+edition = "2024"
+description = "Topology and graph visualization engine"
+
+[dependencies]
+monitaur-core = { path = "../monitaur-core" }

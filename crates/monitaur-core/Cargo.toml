@@ -1,0 +1,8 @@
+[package]
+name = "monitaur-core"
+version = "0.1.0"
+edition = "2024"
+description = "Shared types, data models, and events for Monitaur"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

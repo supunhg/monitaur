@@ -1,0 +1,8 @@
+[package]
+name = "monitaur-discovery"
+version = "0.1.0"
+edition = "2024"
+description = "Infrastructure discovery engine"
+
+[dependencies]
+monitaur-core = { path = "../monitaur-core" }

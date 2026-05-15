@@ -1,0 +1,8 @@
+[package]
+name = "monitaur-metadata"
+version = "0.1.0"
+edition = "2024"
+description = "Metadata and caching engine"
+
+[dependencies]
+monitaur-core = { path = "../monitaur-core" }

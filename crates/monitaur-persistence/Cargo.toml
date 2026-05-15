@@ -1,0 +1,8 @@
+[package]
+name = "monitaur-persistence"
+version = "0.1.0"
+edition = "2024"
+description = "SQLite persistence layer"
+
+[dependencies]
+monitaur-core = { path = "../monitaur-core" }

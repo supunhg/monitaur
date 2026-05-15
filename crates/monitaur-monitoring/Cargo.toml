@@ -1,0 +1,8 @@
+[package]
+name = "monitaur-monitoring"
+version = "0.1.0"
+edition = "2024"
+description = "Real-time infrastructure monitoring engine"
+
+[dependencies]
+monitaur-core = { path = "../monitaur-core" }

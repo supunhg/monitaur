@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/monitaur-core",
+    "crates/monitaur-discovery",
+    "crates/monitaur-monitoring",
+    "crates/monitaur-security",
+    "crates/monitaur-network",
+    "crates/monitaur-visualization",
+    "crates/monitaur-metadata",
+    "crates/monitaur-persistence",
+]
+
+[package]
+name = "monitaur"
+version = "0.1.0"
+edition = "2024"
+description = "Local-first infrastructure intelligence platform"
+
+[dependencies]
+monitaur-core = { path = "crates/monitaur-core" }
+monitaur-discovery = { path = "crates/monitaur-discovery" }
+monitaur-monitoring = { path = "crates/monitaur-monitoring" }
+monitaur-security = { path = "crates/monitaur-security" }
+monitaur-network = { path = "crates/monitaur-network" }
+monitaur-visualization = { path = "crates/monitaur-visualization" }
+monitaur-metadata = { path = "crates/monitaur-metadata" }
+monitaur-persistence = { path = "crates/monitaur-persistence" }
