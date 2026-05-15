@@ -6,3 +6,8 @@ description = "Real-time infrastructure monitoring engine"
 
 [dependencies]
 monitaur-core = { path = "../monitaur-core" }
+sysinfo = "0.33"
+bollard = "0.18"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+futures-util = "0.3"
