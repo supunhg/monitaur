@@ -2,6 +2,7 @@ use monitaur_core::error::EngineResult;
 use monitaur_discovery::DiscoveryEngine;
 use monitaur_monitoring::MonitoringEngine;
 use monitaur_network::NetworkIntelligenceEngine;
+use monitaur_persistence::PersistenceEngine;
 use tracing::info;
 
 #[tokio::main]
@@ -9,6 +10,9 @@ async fn main() -> EngineResult<()> {
     tracing_subscriber::fmt::init();
 
     info!("Monitaur v{} starting", env!("CARGO_PKG_VERSION"));
+
+    // ── Persistence ────────────────────────────────────────────
+    let db = PersistenceEngine::open("monitaur.db")?;
 
     // ── Discovery ──────────────────────────────────────────────
     let discovery = DiscoveryEngine::new();
@@ -41,6 +45,8 @@ async fn main() -> EngineResult<()> {
         }
     }
 
+    db.save_infra_graph(&graph)?;
+
     // ── Monitoring ─────────────────────────────────────────────
     let mut monitoring = MonitoringEngine::new().with_poll_interval(5);
 
@@ -61,6 +67,8 @@ async fn main() -> EngineResult<()> {
             bytes_to_human(sys.network_tx_bytes),
         );
     }
+
+    db.save_metrics_snapshot(&snapshot)?;
 
     // ── Network Intelligence ────────────────────────────────────
     let net = NetworkIntelligenceEngine::new();
@@ -98,20 +106,14 @@ async fn main() -> EngineResult<()> {
                 }
             }
 
-            if !analysis.dns_queries.is_empty() {
-                println!("\n  Known Hosts:");
-                for dns in &analysis.dns_queries {
-                    let ips: Vec<String> = dns.response.iter().map(|ip| ip.to_string()).collect();
-                    println!("    {} → {}", dns.query, ips.join(", "));
-                }
-            }
+            db.save_network_analysis(&analysis)?;
         }
         Err(e) => {
             println!("  Network analysis failed: {e}");
         }
     }
 
-    println!("\nAll systems nominal.");
+    println!("\nAll data persisted to monitaur.db — all systems nominal.");
     Ok(())
 }
 

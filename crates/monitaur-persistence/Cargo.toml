@@ -6,3 +6,7 @@ description = "SQLite persistence layer"
 
 [dependencies]
 monitaur-core = { path = "../monitaur-core" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
+tracing = "0.1"
+thiserror = "2"
