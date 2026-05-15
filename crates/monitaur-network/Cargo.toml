@@ -6,3 +6,4 @@ description = "Network intelligence engine"
 
 [dependencies]
 monitaur-core = { path = "../monitaur-core" }
+tracing = "0.1"

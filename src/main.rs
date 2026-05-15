@@ -1,6 +1,7 @@
 use monitaur_core::error::EngineResult;
 use monitaur_discovery::DiscoveryEngine;
 use monitaur_monitoring::MonitoringEngine;
+use monitaur_network::NetworkIntelligenceEngine;
 use tracing::info;
 
 #[tokio::main]
@@ -13,7 +14,7 @@ async fn main() -> EngineResult<()> {
     let discovery = DiscoveryEngine::new();
     let graph = discovery.discover().await?;
 
-    println!("\n=== Discovery Results ===");
+    println!("\n=== Discovery ===");
     println!(
         "Services: {} | Networks: {} | Edges: {}",
         graph.services.len(),
@@ -43,7 +44,7 @@ async fn main() -> EngineResult<()> {
     // ── Monitoring ─────────────────────────────────────────────
     let mut monitoring = MonitoringEngine::new().with_poll_interval(5);
 
-    println!("\n=== System Metrics (one-shot) ===");
+    println!("\n=== System Metrics ===");
     let snapshot = monitoring.snapshot(&graph.services).await?;
 
     if let Some(sys) = &snapshot.system {
@@ -61,16 +62,53 @@ async fn main() -> EngineResult<()> {
         );
     }
 
-    println!("\n  Container Metrics:");
-    for cm in &snapshot.containers {
-        println!(
-            "    {} — CPU: {:.1}% Mem: {:.1}% Net: ↓{}/↑{}",
-            &cm.container_id[..12],
-            cm.cpu_percent,
-            cm.memory_percent,
-            bytes_to_human(cm.network_rx_bytes),
-            bytes_to_human(cm.network_tx_bytes),
-        );
+    // ── Network Intelligence ────────────────────────────────────
+    let net = NetworkIntelligenceEngine::new();
+
+    println!("\n=== Network Intelligence ===");
+    match net.analyze() {
+        Ok(analysis) => {
+            if analysis.connections.is_empty() {
+                println!("  No active outbound TCP connections");
+            } else {
+                println!("  Active Connections: {}", analysis.connections.len());
+                for conn in &analysis.connections[..analysis.connections.len().min(15)] {
+                    let container_tag = conn
+                        .container_id
+                        .as_ref()
+                        .map(|id| format!(" [{}]", &id[..12]))
+                        .unwrap_or_default();
+                    println!(
+                        "    {}:{} → {}:{}{container_tag}",
+                        conn.local_addr, conn.local_port, conn.remote_addr, conn.remote_port,
+                    );
+                }
+                if analysis.connections.len() > 15 {
+                    println!("    ... and {} more", analysis.connections.len() - 15);
+                }
+            }
+
+            if !analysis.flows.is_empty() {
+                println!("\n  Traffic Flows:");
+                for flow in &analysis.flows {
+                    println!(
+                        "    {}:{} ({:?}) — {} conns",
+                        flow.destination, flow.port, flow.class, flow.connection_count,
+                    );
+                }
+            }
+
+            if !analysis.dns_queries.is_empty() {
+                println!("\n  Known Hosts:");
+                for dns in &analysis.dns_queries {
+                    let ips: Vec<String> = dns.response.iter().map(|ip| ip.to_string()).collect();
+                    println!("    {} → {}", dns.query, ips.join(", "));
+                }
+            }
+        }
+        Err(e) => {
+            println!("  Network analysis failed: {e}");
+        }
     }
 
     println!("\nAll systems nominal.");
