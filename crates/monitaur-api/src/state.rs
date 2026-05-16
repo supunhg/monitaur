@@ -38,20 +38,13 @@ impl AppState {
     /// Returns the cached infra graph or runs a fresh discovery.
     /// Cache is valid for 30 seconds.
     pub async fn discover(self: &Arc<Self>) -> EngineResult<InfraGraph> {
-        // Quick check without holding the lock — best-effort fast path
         {
             let cache = self.cached_graph.lock().await;
-            if let Some((graph, time)) = &*cache && time.elapsed() < CACHE_TTL {
+            if let Some((graph, time)) = &*cache
+                && time.elapsed() < CACHE_TTL
+            {
                 return Ok(graph.clone());
             }
-        }
-
-        // Cache miss — run full discovery under the lock (double-check pattern)
-        let mut cache = self.cached_graph.lock().await;
-
-        // Re-check after acquiring write lock
-        if let Some((graph, time)) = &*cache && time.elapsed() < CACHE_TTL {
-            return Ok(graph.clone());
         }
 
         info!("Cache miss — running infrastructure discovery");
@@ -72,6 +65,7 @@ impl AppState {
             })?;
         }
 
+        let mut cache = self.cached_graph.lock().await;
         *cache = Some((graph.clone(), Instant::now()));
         Ok(graph)
     }

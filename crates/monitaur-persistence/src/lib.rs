@@ -65,7 +65,12 @@ impl PersistenceEngine {
         self.store.list_metrics_history(limit)
     }
 
-    pub fn list_findings(&self, limit: usize, severity: Option<Severity>) -> EngineResult<Vec<SecurityFinding>> {
-        self.store.list_findings(limit, severity.map(|s| format!("{:?}", s)).as_deref())
+    pub fn list_findings(
+        &self,
+        limit: usize,
+        severity: Option<Severity>,
+    ) -> EngineResult<Vec<SecurityFinding>> {
+        self.store
+            .list_findings(limit, severity.map(|s| format!("{:?}", s)).as_deref())
     }
 }

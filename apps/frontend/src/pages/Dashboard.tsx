@@ -213,6 +213,8 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      <HistoryChart />
     </div>
   )
 }

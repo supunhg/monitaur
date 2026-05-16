@@ -1,27 +1,23 @@
+use std::collections::HashMap;
+
 use monitaur_core::network::{Connection, TrafficClass, TrafficFlow};
 
 /// Classifies connections into traffic flows grouped by destination.
 pub fn build_traffic_flows(connections: &[Connection]) -> Vec<TrafficFlow> {
-    let mut flow_map: Vec<(String, u16, TrafficClass, usize)> = Vec::new();
+    let mut flow_map: HashMap<(String, u16), (TrafficClass, usize)> = HashMap::new();
 
     for conn in connections {
         let class = classify_port(conn.remote_port);
         let dest = conn.remote_addr.to_string();
-
-        let existing = flow_map
-            .iter_mut()
-            .find(|(d, p, _, _)| d == &dest && *p == conn.remote_port);
-
-        if let Some((_, _, _, count)) = existing {
-            *count += 1;
-        } else {
-            flow_map.push((dest, conn.remote_port, class, 1));
-        }
+        let entry = flow_map
+            .entry((dest, conn.remote_port))
+            .or_insert((class, 0));
+        entry.1 += 1;
     }
 
     flow_map
         .into_iter()
-        .map(|(dest, port, class, count)| TrafficFlow {
+        .map(|((dest, port), (class, count))| TrafficFlow {
             source: "localhost".to_string(),
             destination: dest,
             port,

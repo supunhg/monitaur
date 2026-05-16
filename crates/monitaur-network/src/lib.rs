@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use monitaur_core::error::EngineResult;
 use monitaur_core::network::{Connection, NetworkAnalysis, TrafficFlow};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Default)]
 pub struct NetworkIntelligenceEngine;
@@ -25,19 +25,28 @@ impl NetworkIntelligenceEngine {
         classification::build_traffic_flows(connections)
     }
 
-    pub fn analyze(&self) -> EngineResult<NetworkAnalysis> {
+    pub async fn analyze(&self) -> EngineResult<NetworkAnalysis> {
         let mut connections = traffic::read_active_connections()?;
 
-        // Build PID→container mapping from services
-        // (container PIDs aren't directly available from `Service` model currently,
-        //  so this is a placeholder for future enhancement)
-        let container_pids: HashMap<String, Vec<u32>> = HashMap::new();
+        let container_pids: HashMap<String, Vec<u32>> = traffic::collect_container_pids().await;
         traffic::resolve_container_connections(&mut connections, &container_pids);
 
         let flows = classification::build_traffic_flows(&connections);
-        let dns_queries = dns_inspection::resolve_known_hosts().unwrap_or_default();
+        let dns_queries = match dns_inspection::resolve_known_hosts() {
+            Ok(queries) => queries,
+            Err(error) => {
+                warn!("Failed to resolve known hosts for network analysis: {error}");
+                Vec::new()
+            }
+        };
 
-        let dns_servers = dns_inspection::read_resolv_conf().unwrap_or_default();
+        let dns_servers = match dns_inspection::read_resolv_conf() {
+            Ok(servers) => servers,
+            Err(error) => {
+                warn!("Failed to read resolver configuration for network analysis: {error}");
+                Vec::new()
+            }
+        };
 
         info!(
             "Network analysis: {} connections, {} flows, {} dns servers",

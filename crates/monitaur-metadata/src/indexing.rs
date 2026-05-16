@@ -70,10 +70,7 @@ impl ServiceIndex {
             }
 
             for port in &service.ports {
-                self.by_port
-                    .entry(port.port)
-                    .or_default()
-                    .push(svc.clone());
+                self.by_port.entry(port.port).or_default().push(svc.clone());
             }
 
             if service.exposure_state == monitaur_core::models::ExposureState::Exposed {
@@ -97,38 +94,23 @@ impl ServiceIndex {
     }
 
     pub fn by_name(&self, name: &str) -> Vec<Arc<Service>> {
-        self.by_name
-            .get(name)
-            .cloned()
-            .unwrap_or_default()
+        self.by_name.get(name).cloned().unwrap_or_default()
     }
 
     pub fn by_class(&self, class: &ServiceClass) -> Vec<Arc<Service>> {
-        self.by_class
-            .get(class)
-            .cloned()
-            .unwrap_or_default()
+        self.by_class.get(class).cloned().unwrap_or_default()
     }
 
     pub fn by_type(&self, service_type: &ServiceType) -> Vec<Arc<Service>> {
-        self.by_type
-            .get(service_type)
-            .cloned()
-            .unwrap_or_default()
+        self.by_type.get(service_type).cloned().unwrap_or_default()
     }
 
     pub fn by_network(&self, network: &str) -> Vec<Arc<Service>> {
-        self.by_network
-            .get(network)
-            .cloned()
-            .unwrap_or_default()
+        self.by_network.get(network).cloned().unwrap_or_default()
     }
 
     pub fn by_port(&self, port: u16) -> Vec<Arc<Service>> {
-        self.by_port
-            .get(&port)
-            .cloned()
-            .unwrap_or_default()
+        self.by_port.get(&port).cloned().unwrap_or_default()
     }
 
     pub fn exposed_services(&self) -> &[Arc<Service>] {

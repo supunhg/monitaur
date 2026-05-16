@@ -3,7 +3,7 @@ pub mod network;
 
 use monitaur_core::error::EngineResult;
 use monitaur_core::models::{InfraGraph, NetworkNode};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Default)]
 pub struct DiscoveryEngine;
@@ -20,7 +20,13 @@ impl DiscoveryEngine {
         let net = network::NetworkDiscoverer::new();
 
         let services = docker.enumerate_containers().await?;
-        let mut network_nodes = net.discover_interfaces().unwrap_or_default();
+        let mut network_nodes = match net.discover_interfaces() {
+            Ok(nodes) => nodes,
+            Err(error) => {
+                warn!("Failed to discover host network interfaces: {error}");
+                Vec::new()
+            }
+        };
 
         let docker_networks = docker.enumerate_networks().await?;
         for (net_name, _containers) in &docker_networks {
