@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::routing::get;
 use axum::{Json, Router};
 use monitaur_core::metrics::SystemMetrics;
@@ -9,7 +9,7 @@ use monitaur_core::models::{InfraGraph, SecurityFinding, Service};
 use monitaur_core::network::NetworkAnalysis;
 use monitaur_core::visualization::TopologyGraph;
 use serde::Serialize;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::auth;
 use crate::state::AppState;
@@ -33,13 +33,25 @@ async fn check_auth(
     match auth {
         Some(token) => {
             let db = state.db.lock().await;
-            if db.validate_token(&token).unwrap_or(false) {
+            let is_valid = db.validate_token(&token).map_err(|_| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": "Database error"})),
+                )
+            })?;
+            if is_valid {
                 Ok(())
             } else {
-                Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Invalid token"}))))
+                Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({"error": "Invalid token"})),
+                ))
             }
         }
-        None => Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Missing Authorization header"})))),
+        None => Err((
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "Missing Authorization header"})),
+        )),
     }
 }
 
@@ -58,7 +70,17 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/security/findings", get(list_findings))
         .route("/api/network", get(get_network))
         .route("/api/visualization", get(get_visualization))
-        .layer(CorsLayer::permissive())
+        .layer(
+            CorsLayer::new()
+                .allow_methods(Any)
+                .allow_headers(Any)
+                .allow_origin([
+                    HeaderValue::from_static("http://localhost:5173"),
+                    HeaderValue::from_static("http://127.0.0.1:5173"),
+                    HeaderValue::from_static("http://tauri.localhost"),
+                    HeaderValue::from_static("https://tauri.localhost"),
+                ]),
+        )
         .with_state(state)
 }
 
@@ -92,14 +114,24 @@ async fn run_scan(
     check_auth(&state, &headers).await?;
 
     // Force fresh discovery for scan (ignore cache)
-    let graph = state.force_discover().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Discovery failed"}))))?;
+    let graph = state.force_discover().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Discovery failed"})),
+        )
+    })?;
 
     let security = state.security();
     let findings = security.analyze(&graph.services).await;
     {
         let db = state.db.lock().await;
         for finding in &findings {
-            db.save_finding(finding).map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+            db.save_finding(finding).map_err(|_e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": "Internal server error"})),
+                )
+            })?;
         }
     }
     {
@@ -108,10 +140,20 @@ async fn run_scan(
     }
 
     let network = state.network();
-    let network_analysis = network.analyze().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Network analysis failed"}))))?;
+    let network_analysis = network.analyze().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Network analysis failed"})),
+        )
+    })?;
     {
         let db = state.db.lock().await;
-        db.save_network_analysis(&network_analysis).map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Database error"}))))?;
+        db.save_network_analysis(&network_analysis).map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database error"})),
+            )
+        })?;
     }
 
     let viz = state.visualization();
@@ -131,7 +173,12 @@ async fn list_services(
 ) -> Result<Json<Vec<Service>>, (StatusCode, Json<serde_json::Value>)> {
     check_auth(&state, &headers).await?;
 
-    let graph = state.discover().await.map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+    let graph = state.discover().await.map_err(|_e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
+    })?;
     Ok(Json(graph.services))
 }
 
@@ -142,13 +189,23 @@ async fn get_service(
 ) -> Result<Json<Service>, (StatusCode, Json<serde_json::Value>)> {
     check_auth(&state, &headers).await?;
 
-    let _graph = state.discover().await.map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+    let _graph = state.discover().await.map_err(|_e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
+    })?;
     let meta = state.metadata.lock().await;
     meta.index
         .by_id(&id)
         .map(|s| (*s).clone())
         .map(Json)
-        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("Service {id} not found")}))))
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": format!("Service {id} not found")})),
+            )
+        })
 }
 
 #[derive(Serialize)]
@@ -163,14 +220,29 @@ async fn get_metrics(
 ) -> Result<Json<MetricsResponse>, (StatusCode, Json<serde_json::Value>)> {
     check_auth(&state, &headers).await?;
 
-    let graph = state.discover().await.map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+    let graph = state.discover().await.map_err(|_e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
+    })?;
 
     let mut monitoring = state.monitoring.lock().await;
-    let snapshot = monitoring.snapshot(&graph.services).await.map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+    let snapshot = monitoring.snapshot(&graph.services).await.map_err(|_e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
+    })?;
 
     {
         let db = state.db.lock().await;
-        db.save_metrics_snapshot(&snapshot).map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+        db.save_metrics_snapshot(&snapshot).map_err(|_e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Internal server error"})),
+            )
+        })?;
     }
     {
         let mut meta = state.metadata.lock().await;
@@ -189,7 +261,12 @@ async fn get_security(
 ) -> Result<Json<Vec<SecurityFinding>>, (StatusCode, Json<serde_json::Value>)> {
     check_auth(&state, &headers).await?;
 
-    let graph = state.discover().await.map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+    let graph = state.discover().await.map_err(|_e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
+    })?;
 
     let security = state.security();
     let findings = security.analyze(&graph.services).await;
@@ -197,7 +274,12 @@ async fn get_security(
     {
         let db = state.db.lock().await;
         for finding in &findings {
-            db.save_finding(finding).map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+            db.save_finding(finding).map_err(|_e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": "Internal server error"})),
+                )
+            })?;
         }
     }
 
@@ -211,10 +293,20 @@ async fn get_network(
     check_auth(&state, &headers).await?;
 
     let network = state.network();
-    let analysis = network.analyze().map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+    let analysis = network.analyze().await.map_err(|_e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
+    })?;
     {
         let db = state.db.lock().await;
-        db.save_network_analysis(&analysis).map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+        db.save_network_analysis(&analysis).map_err(|_e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Internal server error"})),
+            )
+        })?;
     }
     Ok(Json(analysis))
 }
@@ -225,7 +317,12 @@ async fn get_visualization(
 ) -> Result<Json<TopologyGraph>, (StatusCode, Json<serde_json::Value>)> {
     check_auth(&state, &headers).await?;
 
-    let graph = state.discover().await.map_err(|_e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"}))))?;
+    let graph = state.discover().await.map_err(|_e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
+    })?;
     let viz = state.visualization();
     let topology = viz.render(&graph);
     Ok(Json(topology))
@@ -234,12 +331,16 @@ async fn get_visualization(
 async fn get_metrics_history(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<Vec<monitaur_core::metrics::MetricsSnapshot>>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<Vec<monitaur_core::metrics::MetricsSnapshot>>, (StatusCode, Json<serde_json::Value>)>
+{
     check_auth(&state, &headers).await?;
 
     let db = state.db.lock().await;
     let history = db.list_metrics_history(60).map_err(|_e| {
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"})))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
     })?;
     Ok(Json(history))
 }
@@ -252,7 +353,10 @@ async fn list_findings(
 
     let db = state.db.lock().await;
     let findings = db.list_findings(100, None).map_err(|_e| {
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Internal server error"})))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Internal server error"})),
+        )
     })?;
     Ok(Json(findings))
 }

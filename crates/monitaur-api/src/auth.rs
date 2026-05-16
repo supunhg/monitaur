@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
+use argon2::password_hash::{
+    PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng,
+};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::{Json, Router, routing::get, routing::post};
@@ -58,7 +60,12 @@ async fn setup_handler(
 
     {
         let db = state.db.lock().await;
-        if db.has_admin().unwrap_or(false) {
+        if db.has_admin().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database error"})),
+            )
+        })? {
             return Err((
                 StatusCode::CONFLICT,
                 Json(serde_json::json!({"error": "Admin account already exists"})),
@@ -149,16 +156,21 @@ async fn login_handler(
     }))
 }
 
-async fn status_handler(State(state): State<Arc<AppState>>) -> Json<StatusResponse> {
+async fn status_handler(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<StatusResponse>, (StatusCode, Json<serde_json::Value>)> {
     let has_admin = {
         let db = state.db.lock().await;
-        db.has_admin().unwrap_or(false)
+        db.has_admin().map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Database error"})),
+            )
+        })?
     };
 
-    Json(StatusResponse {
+    Ok(Json(StatusResponse {
         has_admin,
         auth_enabled: state.auth_enabled,
-    })
+    }))
 }
-
-

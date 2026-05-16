@@ -16,15 +16,25 @@ function isTauri(): boolean {
 }
 
 let apiBase = '/api' // default for Vite proxy
+let apiBasePromise: Promise<string> | null = null
 
-// In Tauri mode, discover the API port from the backend
-if (isTauri()) {
-  // Dynamic import to avoid breaking in pure browser dev
-  import('@tauri-apps/api/core').then(({ invoke }) => {
-    invoke<number>('get_api_port').then((port) => {
-      apiBase = `http://127.0.0.1:${port}/api`
-    })
-  })
+async function resolveApiBase(): Promise<string> {
+  if (!isTauri()) return apiBase
+  if (!apiBasePromise) {
+    apiBasePromise = (async () => {
+      const { invoke } = await import('@tauri-apps/api/core')
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const port = await invoke<number>('get_api_port')
+        if (port > 0) {
+          apiBase = `http://127.0.0.1:${port}/api`
+          return apiBase
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 100))
+      }
+      throw new Error('Tauri API port is not ready')
+    })()
+  }
+  return apiBasePromise
 }
 
 // ── Token management ───────────────────────────────────────────
@@ -56,9 +66,11 @@ function setToken(token: string) {
 // ── Core fetch ─────────────────────────────────────────────────
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
-  const path = `${apiBase}${url}`
+  const base = await resolveApiBase()
+  const path = `${base}${url}`
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string> | undefined),
   }
   const token = getToken()
   if (token) {

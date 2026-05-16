@@ -1,7 +1,7 @@
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 
-use monitaur_api::{create_router, AppState};
+use monitaur_api::{AppState, create_router};
 use tauri::Emitter;
 use tracing::error;
 

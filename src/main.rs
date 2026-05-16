@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use clap::{Parser, Subcommand};
-use monitaur_api::{create_router, AppState};
+use monitaur_api::{AppState, create_router};
 use monitaur_core::error::EngineResult;
 use monitaur_discovery::DiscoveryEngine;
 use monitaur_metadata::MetadataEngine;
@@ -52,7 +52,6 @@ async fn main() -> EngineResult<()> {
     }
 }
 
-#[allow(unused)]
 async fn cmd_scan(db_path: &str) -> EngineResult<()> {
     info!("Monitaur v{} scan starting", env!("CARGO_PKG_VERSION"));
 
@@ -88,7 +87,7 @@ async fn cmd_scan(db_path: &str) -> EngineResult<()> {
         println!("    [{:?}] {} — {}", f.severity, f.title, f.description);
     }
 
-    if let Ok(analysis) = NetworkIntelligenceEngine::new().analyze() {
+    if let Ok(analysis) = NetworkIntelligenceEngine::new().analyze().await {
         db.save_network_analysis(&analysis)?;
         println!("  Network: {} connections", analysis.connections.len());
     }

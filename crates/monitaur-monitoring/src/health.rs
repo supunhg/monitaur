@@ -15,18 +15,11 @@ impl HealthChecker {
     pub fn check_services(&self, services: &[Service]) -> EngineResult<Vec<ProcessHealth>> {
         let results: Vec<ProcessHealth> = services
             .iter()
-            .map(|s| {
-                let uptime = match s.status.as_str() {
-                    "running" => Some(0),
-                    _ => None,
-                };
-
-                ProcessHealth {
-                    service_id: s.id.clone(),
-                    status: s.status.clone(),
-                    uptime_seconds: uptime,
-                    last_check: SystemTime::now(),
-                }
+            .map(|s| ProcessHealth {
+                service_id: s.id.clone(),
+                status: s.status.clone(),
+                uptime_seconds: None,
+                last_check: SystemTime::now(),
             })
             .collect();
 

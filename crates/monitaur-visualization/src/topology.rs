@@ -38,8 +38,6 @@ impl TopologyGenerator {
 
         // Track how many nodes per layer for vertical spacing
         let mut layer_counts: HashMap<usize, usize> = HashMap::new();
-        let mut layer_heights: HashMap<usize, f64> = HashMap::new();
-
         // First pass: count nodes per layer
         for service in &graph.services {
             let layer = classify_layer(&service.class);
@@ -82,32 +80,37 @@ impl TopologyGenerator {
             });
 
             layer_positions.insert(layer, index + 1.0);
-            layer_heights.insert(layer, y + spacing_y);
         }
 
         // Network nodes
+        let infrastructure_layer = LAYER_NAMES.len() - 1;
         for node in &graph.network_nodes {
-            let y = 6.0 * spacing_y + 50.0;
-            let idx = layer_positions.get(&6).copied().unwrap_or(0.0);
+            let y = infrastructure_layer as f64 * spacing_y + 50.0;
+            let idx = layer_positions
+                .get(&infrastructure_layer)
+                .copied()
+                .unwrap_or(0.0);
 
             nodes.push(TopologyNode {
                 id: node.id.clone(),
                 label: node.id.clone(),
                 node_type: format!("{:?}", node.kind),
-                group: "layer_6".to_string(),
-                layer: 6,
+                group: format!("layer_{infrastructure_layer}"),
+                layer: infrastructure_layer,
                 x: idx * spacing_x - 200.0,
                 y,
                 metadata: vec![],
             });
 
-            layer_positions.insert(6, idx + 1.0);
+            layer_positions.insert(infrastructure_layer, idx + 1.0);
         }
 
         // Edges — only include edges whose endpoints both exist as nodes
         let node_ids: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
         for edge in &graph.edges {
-            if !node_ids.contains(edge.source_id.as_str()) || !node_ids.contains(edge.target_id.as_str()) {
+            if !node_ids.contains(edge.source_id.as_str())
+                || !node_ids.contains(edge.target_id.as_str())
+            {
                 continue;
             }
             edges.push(TopologyEdge {
@@ -153,5 +156,29 @@ impl TopologyGenerator {
             groups,
             layers,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use monitaur_core::models::{InfraGraph, NetworkNode, NetworkNodeKind};
+
+    use super::TopologyGenerator;
+
+    #[test]
+    fn network_nodes_use_a_valid_declared_layer() {
+        let generator = TopologyGenerator::new();
+        let topology = generator.generate(&InfraGraph {
+            services: vec![],
+            network_nodes: vec![NetworkNode {
+                id: "docker-net:test".to_string(),
+                kind: NetworkNodeKind::InternalService,
+                addresses: vec![],
+            }],
+            edges: vec![],
+        });
+
+        assert_eq!(topology.nodes.len(), 1);
+        assert!(topology.nodes[0].layer < topology.layers.len());
     }
 }

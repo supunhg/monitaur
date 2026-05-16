@@ -54,10 +54,35 @@ impl GraphOptimizer {
             info!("Removed {removed} isolated nodes");
         }
 
+        let remaining_node_ids: HashSet<&str> =
+            filtered_nodes.iter().map(|node| node.id.as_str()).collect();
+        let filtered_groups = graph
+            .groups
+            .iter()
+            .map(|group| {
+                let node_ids = group
+                    .node_ids
+                    .iter()
+                    .filter(|id| remaining_node_ids.contains(id.as_str()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                (group, node_ids)
+            })
+            .filter(|(_, node_ids)| !node_ids.is_empty())
+            .map(
+                |(group, node_ids)| monitaur_core::visualization::NodeGroup {
+                    id: group.id.clone(),
+                    label: group.label.clone(),
+                    node_ids,
+                    group_type: group.group_type.clone(),
+                },
+            )
+            .collect();
+
         TopologyGraph {
             nodes: filtered_nodes,
             edges: graph.edges.clone(),
-            groups: graph.groups.clone(),
+            groups: filtered_groups,
             layers: graph.layers.clone(),
         }
     }
@@ -96,5 +121,62 @@ impl GraphOptimizer {
             graph.nodes.len(),
             graph.edges.len()
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use monitaur_core::visualization::{NodeGroup, TopologyEdge, TopologyGraph, TopologyNode};
+
+    use super::GraphOptimizer;
+
+    #[test]
+    fn remove_isolated_also_prunes_group_membership() {
+        let optimizer = GraphOptimizer::new();
+        let graph = TopologyGraph {
+            nodes: vec![
+                TopologyNode {
+                    id: "a".to_string(),
+                    label: "A".to_string(),
+                    node_type: "Service".to_string(),
+                    group: "layer_1".to_string(),
+                    layer: 1,
+                    x: 0.0,
+                    y: 0.0,
+                    metadata: vec![],
+                },
+                TopologyNode {
+                    id: "isolated".to_string(),
+                    label: "Isolated".to_string(),
+                    node_type: "Service".to_string(),
+                    group: "layer_1".to_string(),
+                    layer: 1,
+                    x: 0.0,
+                    y: 0.0,
+                    metadata: vec![],
+                },
+            ],
+            edges: vec![TopologyEdge {
+                id: "e1".to_string(),
+                source: "a".to_string(),
+                target: "a".to_string(),
+                label: "ConnectsTo".to_string(),
+                edge_type: "ConnectsTo".to_string(),
+                width: 1.0,
+            }],
+            groups: vec![NodeGroup {
+                id: "layer_1".to_string(),
+                label: "Layer".to_string(),
+                node_ids: vec!["a".to_string(), "isolated".to_string()],
+                group_type: "layer".to_string(),
+            }],
+            layers: vec!["Layer".to_string()],
+        };
+
+        let cleaned = optimizer.remove_isolated(&graph);
+
+        assert_eq!(cleaned.nodes.len(), 1);
+        assert_eq!(cleaned.groups.len(), 1);
+        assert_eq!(cleaned.groups[0].node_ids, vec!["a".to_string()]);
     }
 }

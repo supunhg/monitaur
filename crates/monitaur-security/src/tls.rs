@@ -32,33 +32,18 @@ impl TlsChecker {
                 };
 
                 match tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(addr)).await {
-                    Ok(Ok(_)) => {
-                        // Port is open and accepting connections
-                        // Full TLS inspection (cert expiry, ciphers) is a future enhancement
-                        findings.push(SecurityFinding {
-                            id: Uuid::new_v4().to_string(),
-                            severity: Severity::Info,
-                            title: "TLS port accepting connections".to_string(),
-                            description: format!(
-                                "Service '{}' has port {} open — TLS certificate inspection is not yet implemented",
-                                service.name, port.port,
-                            ),
-                            source: "tls_check".to_string(),
-                            remediation: None,
-                            timestamp: SystemTime::now(),
-                        });
-                    }
+                    Ok(Ok(_)) => {}
                     _ => {
                         findings.push(SecurityFinding {
                             id: Uuid::new_v4().to_string(),
-                            severity: Severity::Info,
-                            title: "Non-TLS connection on secure port".to_string(),
+                            severity: Severity::Low,
+                            title: "Secure port unreachable".to_string(),
                             description: format!(
-                                "Service '{}' on port {} does not accept connections (port may be closed or filtered)",
+                                "Service '{}' exposes secure port {} but it did not accept a TCP connection from the host",
                                 service.name, port.port,
                             ),
                             source: "tls_check".to_string(),
-                            remediation: Some("Enable TLS on this port for secure communication".to_string()),
+                            remediation: Some("Verify the service is listening on the exposed secure port and that host-to-container networking is configured correctly".to_string()),
                             timestamp: SystemTime::now(),
                         });
                     }

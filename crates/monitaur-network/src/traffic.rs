@@ -3,8 +3,11 @@ use std::fs;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 
+use bollard::Docker;
+use bollard::container::{InspectContainerOptions, ListContainersOptions};
 use monitaur_core::error::{EngineError, EngineResult};
 use monitaur_core::network::{Connection, ConnectionState};
+use tracing::warn;
 
 /// Reads active TCP connections from /proc/net/tcp and /proc/net/tcp6.
 pub fn read_active_connections() -> EngineResult<Vec<Connection>> {
@@ -135,10 +138,14 @@ fn find_pid_for_inode(inode: u64) -> Option<u32> {
     let proc = Path::new("/proc");
     for entry in fs::read_dir(proc).ok()? {
         let entry = entry.ok()?;
-        let pid: u32 = entry.file_name().to_string_lossy().parse().ok()?;
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+            continue;
+        };
 
         let fd_dir = entry.path().join("fd");
-        let fds = fs::read_dir(fd_dir).ok()?;
+        let Ok(fds) = fs::read_dir(fd_dir) else {
+            continue;
+        };
         for fd in fds {
             let fd = fd.ok()?;
             let link = fs::read_link(fd.path()).ok()?;
@@ -149,6 +156,60 @@ fn find_pid_for_inode(inode: u64) -> Option<u32> {
         }
     }
     None
+}
+
+pub async fn collect_container_pids() -> HashMap<String, Vec<u32>> {
+    let docker = match Docker::connect_with_local_defaults() {
+        Ok(docker) => docker,
+        Err(error) => {
+            warn!("Docker socket unavailable for connection attribution: {error}");
+            return HashMap::new();
+        }
+    };
+
+    let containers = match docker
+        .list_containers(Some(ListContainersOptions::<String> {
+            all: true,
+            ..Default::default()
+        }))
+        .await
+    {
+        Ok(containers) => containers,
+        Err(error) => {
+            warn!("Failed to enumerate containers for connection attribution: {error}");
+            return HashMap::new();
+        }
+    };
+
+    let mut container_pids = HashMap::new();
+
+    for container in containers {
+        let Some(id) = container.id else {
+            continue;
+        };
+
+        let inspect = match docker
+            .inspect_container(&id, None::<InspectContainerOptions>)
+            .await
+        {
+            Ok(inspect) => inspect,
+            Err(error) => {
+                warn!("Failed to inspect container {id} for PID attribution: {error}");
+                continue;
+            }
+        };
+
+        let pid = inspect
+            .state
+            .and_then(|state| state.pid)
+            .and_then(|pid| u32::try_from(pid).ok());
+
+        if let Some(pid) = pid {
+            container_pids.insert(id, vec![pid]);
+        }
+    }
+
+    container_pids
 }
 
 pub fn resolve_container_connections(
