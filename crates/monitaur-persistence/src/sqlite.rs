@@ -25,8 +25,16 @@ impl SqliteStore {
         let conn = Connection::open(path)
             .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL;")
-            .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA temp_store=MEMORY;
+             PRAGMA page_size=4096;
+             PRAGMA cache_size=-64000;
+             PRAGMA busy_timeout=5000;
+             PRAGMA foreign_keys=ON;"
+        )
+        .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
 
         migrations::run_migrations(&conn)
             .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
@@ -277,101 +285,130 @@ impl SqliteStore {
     }
 
     pub fn validate_token(&self, token: &str) -> rusqlite::Result<bool> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
         self.conn
             .query_row(
-                "SELECT COUNT(*) FROM auth_tokens WHERE token = ?1",
-                rusqlite::params![token],
+                "SELECT COUNT(*) FROM auth_tokens WHERE token = ?1 AND created_at > ?2",
+                rusqlite::params![token, now - 604800], // 7 day TTL
                 |row| row.get::<_, i64>(0),
             )
             .map(|count| count > 0)
     }
 
+    pub fn cleanup_expired_tokens(&self) -> EngineResult<usize> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let count = self
+            .conn
+            .execute(
+                "DELETE FROM auth_tokens WHERE created_at < ?1",
+                rusqlite::params![now - 604800],
+            )
+            .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
+        if count > 0 {
+            info!("Cleaned up {count} expired auth tokens");
+        }
+        Ok(count)
+    }
+
     // ── Historical reads ────────────────────────────────────────
 
     pub fn list_metrics_history(&self, limit: usize) -> EngineResult<Vec<monitaur_core::metrics::MetricsSnapshot>> {
+        // Single JOIN query eliminates N+1 problem
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, cpu_percent, memory_total_bytes, memory_used_bytes,
-                        network_rx_bytes, network_tx_bytes, taken_at
-                 FROM metrics_snapshots ORDER BY taken_at DESC LIMIT ?1",
+                "SELECT ms.id, ms.cpu_percent, ms.memory_total_bytes, ms.memory_used_bytes,
+                        ms.network_rx_bytes, ms.network_tx_bytes, ms.taken_at,
+                        cm.container_id, cm.cpu_percent, cm.memory_usage_bytes,
+                        cm.memory_limit_bytes, cm.network_rx_bytes, cm.network_tx_bytes
+                 FROM metrics_snapshots ms
+                 LEFT JOIN container_metrics cm ON cm.snapshot_id = ms.id
+                 ORDER BY ms.taken_at DESC
+                 LIMIT ?1",
             )
             .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
 
         let rows = stmt
             .query_map(rusqlite::params![limit as i64], |row| {
+                let taken: i64 = row.get(6)?;
+                let ts = std::time::UNIX_EPOCH + std::time::Duration::from_secs(taken as u64);
+
+                let container_id: Option<String> = row.get(7)?;
+                let cm_cpu: f64 = row.get::<_, Option<f64>>(8)?.unwrap_or(0.0);
+                let cm_mem_usage: i64 = row.get::<_, Option<i64>>(9)?.unwrap_or(0);
+                let cm_mem_limit: i64 = row.get::<_, Option<i64>>(10)?.unwrap_or(0);
+                let cm_net_rx: i64 = row.get::<_, Option<i64>>(11)?.unwrap_or(0);
+                let cm_net_tx: i64 = row.get::<_, Option<i64>>(12)?.unwrap_or(0);
+
+                let cm = container_id.map(|cid| {
+                    let mem_usage = cm_mem_usage as u64;
+                    let mem_limit = cm_mem_limit as u64;
+                    let mem_pct = if mem_limit > 0 { (mem_usage as f64 / mem_limit as f64) * 100.0 } else { 0.0 };
+                    monitaur_core::metrics::ContainerMetrics {
+                        container_id: cid,
+                        cpu_percent: cm_cpu,
+                        memory_usage_bytes: mem_usage,
+                        memory_limit_bytes: mem_limit,
+                        memory_percent: mem_pct,
+                        network_rx_bytes: cm_net_rx as u64,
+                        network_tx_bytes: cm_net_tx as u64,
+                        pids_current: None,
+                        timestamp: ts,
+                    }
+                });
+
                 let snapshot_id: i64 = row.get(0)?;
                 let cpu: Option<f64> = row.get(1)?;
                 let mem_total: Option<i64> = row.get(2)?;
                 let mem_used: Option<i64> = row.get(3)?;
                 let rx: Option<i64> = row.get(4)?;
                 let tx: Option<i64> = row.get(5)?;
-                let taken: i64 = row.get(6)?;
-                Ok((snapshot_id, cpu, mem_total, mem_used, rx, tx, taken))
+
+                Ok((snapshot_id, ts, cpu, mem_total, mem_used, rx, tx, cm))
             })
             .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
 
-        let mut snapshots = Vec::new();
+        // Group by snapshot_id using a HashMap to avoid O(n*m)
+        let mut snapshot_map: std::collections::HashMap<i64, monitaur_core::metrics::MetricsSnapshot> = std::collections::HashMap::new();
+        let mut order: Vec<i64> = Vec::new();
+
         for row in rows {
-            let (id, cpu, mem_total, mem_used, rx, tx, taken) =
+            let (id, ts, cpu, mem_total, mem_used, rx, tx, cm) =
                 row.map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
 
-            let mut snapshot = monitaur_core::metrics::MetricsSnapshot {
-                system: cpu.map(|_| monitaur_core::metrics::SystemMetrics {
-                    cpu_percent: cpu.unwrap_or(0.0),
-                    memory_total_bytes: mem_total.unwrap_or(0) as u64,
-                    memory_used_bytes: mem_used.unwrap_or(0) as u64,
-                    memory_percent: mem_total.filter(|&t| t > 0).map(|t| {
-                        (mem_used.unwrap_or(0) as f64 / t as f64) * 100.0
-                    }).unwrap_or(0.0),
-                    network_rx_bytes: rx.unwrap_or(0) as u64,
-                    network_tx_bytes: tx.unwrap_or(0) as u64,
-                    timestamp: std::time::UNIX_EPOCH + std::time::Duration::from_secs(taken as u64),
-                }),
-                containers: Vec::new(),
-                processes: Vec::new(),
-                timestamp: std::time::UNIX_EPOCH + std::time::Duration::from_secs(taken as u64),
-            };
+            let entry = snapshot_map.entry(id).or_insert_with(|| {
+                order.push(id);
+                monitaur_core::metrics::MetricsSnapshot {
+                    system: cpu.map(|_| monitaur_core::metrics::SystemMetrics {
+                        cpu_percent: cpu.unwrap_or(0.0),
+                        memory_total_bytes: mem_total.unwrap_or(0) as u64,
+                        memory_used_bytes: mem_used.unwrap_or(0) as u64,
+                        memory_percent: mem_total.filter(|&t| t > 0).map(|t| {
+                            (mem_used.unwrap_or(0) as f64 / t as f64) * 100.0
+                        }).unwrap_or(0.0),
+                        network_rx_bytes: rx.unwrap_or(0) as u64,
+                        network_tx_bytes: tx.unwrap_or(0) as u64,
+                        timestamp: ts,
+                    }),
+                    containers: Vec::new(),
+                    processes: Vec::new(),
+                    timestamp: ts,
+                }
+            });
 
-            // Load container metrics for this snapshot
-            let mut cstmt = self
-                .conn
-                .prepare(
-                    "SELECT container_id, cpu_percent, memory_usage_bytes, memory_limit_bytes,
-                            network_rx_bytes, network_tx_bytes
-                     FROM container_metrics WHERE snapshot_id = ?1",
-                )
-                .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
-
-            let crows = cstmt
-                .query_map(rusqlite::params![id], |row| {
-                    Ok(monitaur_core::metrics::ContainerMetrics {
-                        container_id: row.get(0)?,
-                        cpu_percent: row.get::<_, Option<f64>>(1)?.unwrap_or(0.0),
-                        memory_usage_bytes: row.get::<_, Option<i64>>(2)?.unwrap_or(0) as u64,
-                        memory_limit_bytes: row.get::<_, Option<i64>>(3)?.unwrap_or(0) as u64,
-                        memory_percent: 0.0,
-                        network_rx_bytes: row.get::<_, Option<i64>>(4)?.unwrap_or(0) as u64,
-                        network_tx_bytes: row.get::<_, Option<i64>>(5)?.unwrap_or(0) as u64,
-                        pids_current: None,
-                        timestamp: snapshot.timestamp,
-                    })
-                })
-                .map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
-
-            for c in crows {
-                let mut cm = c.map_err(|e| monitaur_core::error::EngineError::Persistence(e.to_string()))?;
-                cm.memory_percent = if cm.memory_limit_bytes > 0 {
-                    (cm.memory_usage_bytes as f64 / cm.memory_limit_bytes as f64) * 100.0
-                } else {
-                    0.0
-                };
-                snapshot.containers.push(cm);
+            if let Some(cm_val) = cm {
+                entry.containers.push(cm_val);
             }
-
-            snapshots.push(snapshot);
         }
 
+        // Return in order
+        let snapshots: Vec<_> = order.iter().filter_map(|id| snapshot_map.remove(id)).collect();
         Ok(snapshots)
     }
 

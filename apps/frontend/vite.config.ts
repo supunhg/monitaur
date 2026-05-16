@@ -13,4 +13,22 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('cytoscape')) {
+            return 'cytoscape-vendor'
+          }
+          if (id.includes('recharts')) {
+            return 'chart-vendor'
+          }
+          if (id.includes('node_modules')) {
+            return 'vendor'
+          }
+        },
+      },
+    },
+    chunkSizeWarningLimit: 500,
+  },
 })

@@ -1,16 +1,17 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use monitaur_core::models::{Service, ServiceClass, ServiceType};
 use tracing::info;
 
 pub struct ServiceIndex {
-    by_id: HashMap<String, Service>,
-    by_name: HashMap<String, Vec<Service>>,
-    by_class: HashMap<ServiceClass, Vec<Service>>,
-    by_type: HashMap<ServiceType, Vec<Service>>,
-    by_network: HashMap<String, Vec<Service>>,
-    by_port: HashMap<u16, Vec<Service>>,
-    exposed: Vec<Service>,
+    by_id: HashMap<String, Arc<Service>>,
+    by_name: HashMap<String, Vec<Arc<Service>>>,
+    by_class: HashMap<ServiceClass, Vec<Arc<Service>>>,
+    by_type: HashMap<ServiceType, Vec<Arc<Service>>>,
+    by_network: HashMap<String, Vec<Arc<Service>>>,
+    by_port: HashMap<u16, Vec<Arc<Service>>>,
+    exposed: Vec<Arc<Service>>,
 }
 
 impl Default for ServiceIndex {
@@ -42,46 +43,41 @@ impl ServiceIndex {
         self.exposed.clear();
 
         for service in services {
-            // By ID (unique)
-            self.by_id.insert(service.id.clone(), service.clone());
+            let svc = Arc::new(service.clone());
 
-            // By name
+            self.by_id.insert(service.id.clone(), svc.clone());
+
             self.by_name
                 .entry(service.name.clone())
                 .or_default()
-                .push(service.clone());
+                .push(svc.clone());
 
-            // By class
             self.by_class
                 .entry(service.class.clone())
                 .or_default()
-                .push(service.clone());
+                .push(svc.clone());
 
-            // By type
             self.by_type
                 .entry(service.service_type.clone())
                 .or_default()
-                .push(service.clone());
+                .push(svc.clone());
 
-            // By network
             for net in &service.networks {
                 self.by_network
                     .entry(net.clone())
                     .or_default()
-                    .push(service.clone());
+                    .push(svc.clone());
             }
 
-            // By port
             for port in &service.ports {
                 self.by_port
                     .entry(port.port)
                     .or_default()
-                    .push(service.clone());
+                    .push(svc.clone());
             }
 
-            // Exposed services
             if service.exposure_state == monitaur_core::models::ExposureState::Exposed {
-                self.exposed.push(service.clone());
+                self.exposed.push(svc);
             }
         }
 
@@ -96,46 +92,46 @@ impl ServiceIndex {
         );
     }
 
-    pub fn by_id(&self, id: &str) -> Option<&Service> {
-        self.by_id.get(id)
+    pub fn by_id(&self, id: &str) -> Option<Arc<Service>> {
+        self.by_id.get(id).cloned()
     }
 
-    pub fn by_name(&self, name: &str) -> Vec<&Service> {
+    pub fn by_name(&self, name: &str) -> Vec<Arc<Service>> {
         self.by_name
             .get(name)
-            .map(|v| v.iter().collect())
+            .cloned()
             .unwrap_or_default()
     }
 
-    pub fn by_class(&self, class: &ServiceClass) -> Vec<&Service> {
+    pub fn by_class(&self, class: &ServiceClass) -> Vec<Arc<Service>> {
         self.by_class
             .get(class)
-            .map(|v| v.iter().collect())
+            .cloned()
             .unwrap_or_default()
     }
 
-    pub fn by_type(&self, service_type: &ServiceType) -> Vec<&Service> {
+    pub fn by_type(&self, service_type: &ServiceType) -> Vec<Arc<Service>> {
         self.by_type
             .get(service_type)
-            .map(|v| v.iter().collect())
+            .cloned()
             .unwrap_or_default()
     }
 
-    pub fn by_network(&self, network: &str) -> Vec<&Service> {
+    pub fn by_network(&self, network: &str) -> Vec<Arc<Service>> {
         self.by_network
             .get(network)
-            .map(|v| v.iter().collect())
+            .cloned()
             .unwrap_or_default()
     }
 
-    pub fn by_port(&self, port: u16) -> Vec<&Service> {
+    pub fn by_port(&self, port: u16) -> Vec<Arc<Service>> {
         self.by_port
             .get(&port)
-            .map(|v| v.iter().collect())
+            .cloned()
             .unwrap_or_default()
     }
 
-    pub fn exposed_services(&self) -> &[Service] {
+    pub fn exposed_services(&self) -> &[Arc<Service>] {
         &self.exposed
     }
 

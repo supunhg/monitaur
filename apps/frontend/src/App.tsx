@@ -1,19 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Shell } from './components/Shell'
 import { Dashboard } from './pages/Dashboard'
-import { Topology } from './pages/Topology'
 import { Security } from './pages/Security'
 import { Services } from './pages/Services'
 import { Login } from './pages/Login'
 import { api } from './lib/api'
+
+const TopologyPage = lazy(() => import('./pages/Topology').then(m => ({ default: m.Topology })))
 
 function ProtectedApp() {
   return (
     <Shell>
       <Routes>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/topology" element={<Topology />} />
+        <Route
+          path="/topology"
+          element={
+            <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-pulse text-zinc-500">Loading graph...</div></div>}>
+              <TopologyPage />
+            </Suspense>
+          }
+        />
         <Route path="/security" element={<Security />} />
         <Route path="/services" element={<Services />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -42,7 +50,6 @@ export default function App() {
         if (s.auth_enabled && !api.getToken()) {
           setAuthState('login')
         } else if (s.auth_enabled && api.getToken()) {
-          // Validate the stored token
           api.health().then(
             () => setAuthState('app'),
             () => setAuthState('login'),

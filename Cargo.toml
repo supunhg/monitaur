@@ -40,3 +40,14 @@ serde_json = "1"
 argon2 = "0.5"
 uuid = { version = "1", features = ["v4"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+opt-level = 0
+incremental = true

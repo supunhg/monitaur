@@ -2,10 +2,8 @@ use std::sync::Arc;
 
 use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
-use axum::extract::{Request, State};
+use axum::extract::State;
 use axum::http::StatusCode;
-use axum::middleware::Next;
-use axum::response::Response;
 use axum::{Json, Router, routing::get, routing::post};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -51,6 +49,12 @@ async fn setup_handler(
             Json(serde_json::json!({"error": "Password must be at least 8 characters"})),
         ));
     }
+    if req.password.len() > 128 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Password must not exceed 128 characters"})),
+        ));
+    }
 
     {
         let db = state.db.lock().await;
@@ -66,10 +70,10 @@ async fn setup_handler(
     let argon2 = Argon2::default();
     let hash = argon2
         .hash_password(req.password.as_bytes(), &salt)
-        .map_err(|e| {
+        .map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("Hashing failed: {e}")})),
+                Json(serde_json::json!({"error": "Password hashing failed"})),
             )
         })?
         .to_string();
@@ -78,16 +82,16 @@ async fn setup_handler(
 
     {
         let db = state.db.lock().await;
-        db.set_password(&hash).map_err(|e| {
+        db.set_password(&hash).map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": e.to_string()})),
+                Json(serde_json::json!({"error": "Database error"})),
             )
         })?;
-        db.create_token(&token).map_err(|e| {
+        db.create_token(&token).map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": e.to_string()})),
+                Json(serde_json::json!({"error": "Database error"})),
             )
         })?;
     }
@@ -130,10 +134,10 @@ async fn login_handler(
     let token = uuid::Uuid::new_v4().to_string();
     {
         let db = state.db.lock().await;
-        db.create_token(&token).map_err(|e| {
+        db.create_token(&token).map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": e.to_string()})),
+                Json(serde_json::json!({"error": "Database error"})),
             )
         })?;
     }
@@ -157,38 +161,4 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> Json<StatusRespon
     })
 }
 
-/// Auth middleware — checks Bearer token when auth is enabled.
-pub async fn auth_middleware(
-    State(state): State<Arc<AppState>>,
-    req: Request,
-    next: Next,
-) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
-    if !state.auth_enabled {
-        return Ok(next.run(req).await);
-    }
 
-    let auth = req
-        .headers()
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(|s| s.to_string());
-
-    match auth {
-        Some(token) => {
-            let valid = state.db.lock().await.validate_token(&token).unwrap_or(false);
-            if valid {
-                Ok(next.run(req).await)
-            } else {
-                Err((
-                    StatusCode::UNAUTHORIZED,
-                    Json(serde_json::json!({"error": "Invalid token"})),
-                ))
-            }
-        }
-        None => Err((
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({"error": "Missing Authorization header"})),
-        )),
-    }
-}

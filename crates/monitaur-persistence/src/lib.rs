@@ -55,6 +55,10 @@ impl PersistenceEngine {
         self.store.validate_token(token)
     }
 
+    pub fn cleanup_expired_tokens(&self) -> EngineResult<usize> {
+        self.store.cleanup_expired_tokens()
+    }
+
     // ── Historical reads ────────────────────────────────────────
 
     pub fn list_metrics_history(&self, limit: usize) -> EngineResult<Vec<MetricsSnapshot>> {

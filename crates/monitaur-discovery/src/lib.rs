@@ -1,7 +1,5 @@
-pub mod dns;
 pub mod docker;
 pub mod network;
-pub mod ports;
 
 use monitaur_core::error::EngineResult;
 use monitaur_core::models::{InfraGraph, NetworkNode};
