@@ -1,43 +1,29 @@
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 
-use axum::Router;
-use monitaur_persistence::PersistenceEngine;
-use monitaur_discovery::DiscoveryEngine;
-use monitaur_metadata::MetadataEngine;
-use monitaur_monitoring::MonitoringEngine;
-use monitaur_network::NetworkIntelligenceEngine;
-use monitaur_security::SecurityEngine;
-use monitaur_visualization::VisualizationEngine;
-use tokio::sync::Mutex;
-use tower_http::cors::CorsLayer;
+use monitaur_api::{create_router, AppState};
+use tauri::Emitter;
 
-/// Shared application state for Tauri commands.
 pub struct DesktopState {
-    pub api_port: u16,
-    pub db: Mutex<PersistenceEngine>,
-    pub monitoring: Mutex<MonitoringEngine>,
-    pub metadata: Mutex<MetadataEngine>,
+    pub api_port: AtomicU16,
+    pub app_state: Arc<AppState>,
 }
 
 impl DesktopState {
     fn new(db_path: &str) -> Result<Self, monitaur_core::error::EngineError> {
-        let db = PersistenceEngine::open(db_path)?;
+        let app_state = AppState::new(db_path, false)?;
         Ok(Self {
-            api_port: 0,
-            db: Mutex::new(db),
-            monitoring: Mutex::new(MonitoringEngine::new().with_poll_interval(5)),
-            metadata: Mutex::new(MetadataEngine::new()),
+            api_port: AtomicU16::new(0),
+            app_state,
         })
     }
 }
 
-/// Tauri command: get the API server port.
 #[tauri::command]
 fn get_api_port(state: tauri::State<'_, DesktopState>) -> u16 {
-    state.api_port
+    state.api_port.load(Ordering::Relaxed)
 }
 
-/// Health check command.
 #[tauri::command]
 fn health() -> serde_json::Value {
     serde_json::json!({
@@ -46,17 +32,11 @@ fn health() -> serde_json::Value {
     })
 }
 
-/// Start the embedded axum API server on a random port.
-async fn start_api(state: Arc<DesktopState>) -> Result<u16, Box<dyn std::error::Error>> {
-    let app: Router<()> = Router::new()
-        .route("/api/health", axum::routing::get(|| async {
-            axum::Json(serde_json::json!({"status": "ok", "version": "0.1.0"}))
-        }))
-        .layer(CorsLayer::permissive());
-
+async fn start_api(state: &DesktopState) -> Result<u16, Box<dyn std::error::Error>> {
+    let app = create_router(state.app_state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();
-    state.api_port = port;
+    state.api_port.store(port, Ordering::Relaxed);
 
     tokio::spawn(async move {
         axum::serve(listener, app).await.ok();
@@ -68,15 +48,16 @@ async fn start_api(state: Arc<DesktopState>) -> Result<u16, Box<dyn std::error::
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = DesktopState::new("monitaur.db").expect("Failed to open database");
+    let state = Arc::new(state);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(state)
-        .setup(|app| {
+        .manage(state.clone())
+        .setup(move |app| {
             let handle = app.handle().clone();
+            let state_clone = state.clone();
             tauri::async_runtime::spawn(async move {
-                let state = handle.state::<DesktopState>();
-                match start_api(state.inner()).await {
+                match start_api(state_clone.as_ref()).await {
                     Ok(port) => {
                         tracing::info!("API server started on port {port}");
                         let _ = handle.emit("api-ready", port);

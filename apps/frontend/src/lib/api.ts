@@ -8,21 +8,54 @@ import type {
   ScanResponse,
 } from './types'
 
-const BASE = '/api'
+// ── Tauri detection ────────────────────────────────────────────
+
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+let apiBase = '/api' // default for Vite proxy
+
+// In Tauri mode, discover the API port from the backend
+if (isTauri()) {
+  // Dynamic import to avoid breaking in pure browser dev
+  import('@tauri-apps/api/core').then(({ invoke }) => {
+    invoke<number>('get_api_port').then((port) => {
+      apiBase = `http://127.0.0.1:${port}/api`
+    })
+  })
+}
+
+// ── Token management ───────────────────────────────────────────
 
 function getToken(): string | null {
-  return localStorage.getItem('monitaur_token')
+  try {
+    return localStorage.getItem('monitaur_token')
+  } catch {
+    return null
+  }
 }
 
 function clearToken() {
-  localStorage.removeItem('monitaur_token')
+  try {
+    localStorage.removeItem('monitaur_token')
+  } catch {
+    // localStorage not available
+  }
 }
 
 function setToken(token: string) {
-  localStorage.setItem('monitaur_token', token)
+  try {
+    localStorage.setItem('monitaur_token', token)
+  } catch {
+    // localStorage not available
+  }
 }
 
+// ── Core fetch ─────────────────────────────────────────────────
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const path = `${apiBase}${url}`
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
@@ -31,7 +64,7 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const res = await fetch(url, { ...options, headers })
+  const res = await fetch(path, { ...options, headers })
 
   if (res.status === 401) {
     clearToken()
@@ -47,39 +80,41 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
+// ── API methods ────────────────────────────────────────────────
+
 export const api = {
-  health: () => fetchJson<{ status: string; version: string }>(`${BASE}/health`),
+  health: () => fetchJson<{ status: string; version: string }>('/health'),
 
-  scan: () => fetchJson<ScanResponse>(`${BASE}/scan`),
+  scan: () => fetchJson<ScanResponse>('/scan'),
 
-  services: () => fetchJson<Service[]>(`${BASE}/services`),
+  services: () => fetchJson<Service[]>('/services'),
 
-  service: (id: string) => fetchJson<Service>(`${BASE}/services/${encodeURIComponent(id)}`),
+  service: (id: string) => fetchJson<Service>(`/services/${encodeURIComponent(id)}`),
 
-  metrics: () => fetchJson<MetricsResponse>(`${BASE}/metrics`),
+  metrics: () => fetchJson<MetricsResponse>('/metrics'),
 
-  security: () => fetchJson<SecurityFinding[]>(`${BASE}/security`),
+  security: () => fetchJson<SecurityFinding[]>('/security'),
 
-  network: () => fetchJson<NetworkAnalysis>(`${BASE}/network`),
+  network: () => fetchJson<NetworkAnalysis>('/network'),
 
-  visualization: () => fetchJson<TopologyGraph>(`${BASE}/visualization`),
+  visualization: () => fetchJson<TopologyGraph>('/visualization'),
 
   // Auth
-  authStatus: () => fetchJson<{ has_admin: boolean; auth_enabled: boolean }>(`${BASE}/auth/status`),
+  authStatus: () =>
+    fetchJson<{ has_admin: boolean; auth_enabled: boolean }>('/auth/status'),
 
   setup: (password: string) =>
-    fetchJson<{ token: string; message: string }>(`${BASE}/auth/setup`, {
+    fetchJson<{ token: string; message: string }>('/auth/setup', {
       method: 'POST',
       body: JSON.stringify({ password }),
     }),
 
   login: (password: string) =>
-    fetchJson<{ token: string; message: string }>(`${BASE}/auth/login`, {
+    fetchJson<{ token: string; message: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ password }),
     }),
 
-  // Token management
   getToken,
   setToken,
   clearToken,

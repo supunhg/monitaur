@@ -16,15 +16,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+monitaur-api = { path = "../crates/monitaur-api" }
 monitaur-core = { path = "../crates/monitaur-core" }
-monitaur-discovery = { path = "../crates/monitaur-discovery" }
-monitaur-monitoring = { path = "../crates/monitaur-monitoring" }
-monitaur-security = { path = "../crates/monitaur-security" }
-monitaur-network = { path = "../crates/monitaur-network" }
-monitaur-visualization = { path = "../crates/monitaur-visualization" }
-monitaur-metadata = { path = "../crates/monitaur-metadata" }
 monitaur-persistence = { path = "../crates/monitaur-persistence" }
+monitaur-discovery = { path = "../crates/monitaur-discovery" }
+monitaur-metadata = { path = "../crates/monitaur-metadata" }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"

@@ -1,10 +1,7 @@
-mod api;
-mod app_state;
-mod auth;
-
 use std::net::SocketAddr;
 
 use clap::{Parser, Subcommand};
+use monitaur_api::{create_router, AppState};
 use monitaur_core::error::EngineResult;
 use monitaur_discovery::DiscoveryEngine;
 use monitaur_metadata::MetadataEngine;
@@ -14,9 +11,6 @@ use monitaur_persistence::PersistenceEngine;
 use monitaur_security::SecurityEngine;
 use monitaur_visualization::VisualizationEngine;
 use tracing::info;
-
-use crate::api::create_router;
-use crate::app_state::AppState;
 
 #[derive(Parser)]
 #[command(
@@ -58,15 +52,13 @@ async fn main() -> EngineResult<()> {
     }
 }
 
-// ── Scan ───────────────────────────────────────────────────────
-
+#[allow(unused)]
 async fn cmd_scan(db_path: &str) -> EngineResult<()> {
     info!("Monitaur v{} scan starting", env!("CARGO_PKG_VERSION"));
 
     let db = PersistenceEngine::open(db_path)?;
     let mut meta = MetadataEngine::new();
 
-    // Discovery
     let discovery = DiscoveryEngine::new();
     let graph = discovery.discover().await?;
     meta.update(graph.clone());
@@ -79,13 +71,11 @@ async fn cmd_scan(db_path: &str) -> EngineResult<()> {
         graph.edges.len(),
     );
 
-    // Monitoring
     let mut monitoring = MonitoringEngine::new().with_poll_interval(5);
     let snapshot = monitoring.snapshot(&graph.services).await?;
     db.save_metrics_snapshot(&snapshot)?;
     meta.snapshot_metrics(snapshot);
 
-    // Security
     let security = SecurityEngine::new();
     let findings = security.analyze(&graph.services).await;
     for finding in &findings {
@@ -98,13 +88,11 @@ async fn cmd_scan(db_path: &str) -> EngineResult<()> {
         println!("    [{:?}] {} — {}", f.severity, f.title, f.description);
     }
 
-    // Network
     if let Ok(analysis) = NetworkIntelligenceEngine::new().analyze() {
         db.save_network_analysis(&analysis)?;
         println!("  Network: {} connections", analysis.connections.len());
     }
 
-    // Visualization
     let topology = VisualizationEngine::new().render(&graph);
     println!(
         "  Topology: {} nodes, {} edges, {} groups",
@@ -122,8 +110,6 @@ async fn cmd_scan(db_path: &str) -> EngineResult<()> {
     println!("\nScan complete — all data written to {db_path}");
     Ok(())
 }
-
-// ── Serve ──────────────────────────────────────────────────────
 
 async fn cmd_serve(port: u16, db_path: &str, auth: bool) -> EngineResult<()> {
     if auth {
