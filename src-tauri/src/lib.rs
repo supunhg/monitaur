@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use monitaur_api::{create_router, AppState};
 use tauri::Emitter;
+use tracing::error;
 
 pub struct DesktopState {
     pub api_port: AtomicU16,
@@ -47,10 +48,16 @@ async fn start_api(state: &DesktopState) -> Result<u16, Box<dyn std::error::Erro
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let state = DesktopState::new("monitaur.db").expect("Failed to open database");
+    let state = match DesktopState::new("monitaur.db") {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to initialize desktop app: {e}");
+            return;
+        }
+    };
     let state = Arc::new(state);
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(state.clone())
         .setup(move |app| {
@@ -70,6 +77,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![health, get_api_port])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!());
+
+    match app {
+        Ok(app) => {
+            app.run(|_handle, _event| {});
+        }
+        Err(e) => {
+            error!("Failed to build Tauri application: {e}");
+        }
+    }
 }

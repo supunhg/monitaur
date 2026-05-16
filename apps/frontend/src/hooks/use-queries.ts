@@ -42,6 +42,22 @@ export function useSecurity() {
   })
 }
 
+export function useMetricsHistory() {
+  return useQuery({
+    queryKey: ['metrics-history'],
+    queryFn: api.metricsHistory,
+    staleTime: 60_000,
+  })
+}
+
+export function useFindingsHistory() {
+  return useQuery({
+    queryKey: ['findings-history'],
+    queryFn: api.findingsHistory,
+    staleTime: 60_000,
+  })
+}
+
 export function useNetwork(poll = false) {
   return useQuery({
     queryKey: ['network'],

@@ -5,6 +5,7 @@ import type {
   TopologyGraph,
   Service,
   MetricsResponse,
+  MetricsSnapshot,
   ScanResponse,
 } from './types'
 
@@ -94,6 +95,10 @@ export const api = {
   metrics: () => fetchJson<MetricsResponse>('/metrics'),
 
   security: () => fetchJson<SecurityFinding[]>('/security'),
+
+  findingsHistory: () => fetchJson<SecurityFinding[]>('/security/findings'),
+
+  metricsHistory: () => fetchJson<MetricsSnapshot[]>('/metrics/history'),
 
   network: () => fetchJson<NetworkAnalysis>('/network'),
 

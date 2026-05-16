@@ -7,18 +7,26 @@ use monitaur_core::error::{EngineError, EngineResult};
 use monitaur_core::metrics::ContainerMetrics;
 use monitaur_core::metrics::SystemMetrics;
 use sysinfo::{Networks, System};
+use tracing::warn;
 
 #[derive(Default)]
 pub struct MetricsCollector {
     system: System,
     networks: Networks,
+    docker: Option<Docker>,
 }
 
 impl MetricsCollector {
     pub fn new() -> Self {
+        let docker = Docker::connect_with_local_defaults().ok();
+        if docker.is_none() {
+            warn!("Docker socket not available — container metrics will be unavailable");
+        }
+
         Self {
             system: System::new(),
             networks: Networks::new_with_refreshed_list(),
+            docker,
         }
     }
 
@@ -45,8 +53,10 @@ impl MetricsCollector {
     }
 
     pub async fn collect_container(&self, container_id: &str) -> EngineResult<ContainerMetrics> {
-        let docker = Docker::connect_with_local_defaults()
-            .map_err(|e| EngineError::Monitoring(format!("Docker connect failed: {e}")))?;
+        let docker = self
+            .docker
+            .as_ref()
+            .ok_or_else(|| EngineError::Monitoring("Docker not connected".to_string()))?;
 
         let stats = docker
             .stats(

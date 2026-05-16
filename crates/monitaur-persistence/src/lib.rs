@@ -3,7 +3,7 @@ pub mod sqlite;
 
 use monitaur_core::error::EngineResult;
 use monitaur_core::metrics::MetricsSnapshot;
-use monitaur_core::models::{InfraGraph, SecurityFinding};
+use monitaur_core::models::{InfraGraph, SecurityFinding, Severity};
 use monitaur_core::network::NetworkAnalysis;
 use sqlite::SqliteStore;
 
@@ -53,5 +53,15 @@ impl PersistenceEngine {
 
     pub fn validate_token(&self, token: &str) -> rusqlite::Result<bool> {
         self.store.validate_token(token)
+    }
+
+    // ── Historical reads ────────────────────────────────────────
+
+    pub fn list_metrics_history(&self, limit: usize) -> EngineResult<Vec<MetricsSnapshot>> {
+        self.store.list_metrics_history(limit)
+    }
+
+    pub fn list_findings(&self, limit: usize, severity: Option<Severity>) -> EngineResult<Vec<SecurityFinding>> {
+        self.store.list_findings(limit, severity.map(|s| format!("{:?}", s)).as_deref())
     }
 }

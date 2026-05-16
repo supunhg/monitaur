@@ -53,7 +53,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/services", get(list_services))
         .route("/api/services/{id}", get(get_service))
         .route("/api/metrics", get(get_metrics))
+        .route("/api/metrics/history", get(get_metrics_history))
         .route("/api/security", get(get_security))
+        .route("/api/security/findings", get(list_findings))
         .route("/api/network", get(get_network))
         .route("/api/visualization", get(get_visualization))
         .layer(CorsLayer::permissive())
@@ -245,4 +247,30 @@ async fn get_visualization(
     let viz = state.visualization();
     let topology = viz.render(&graph);
     Ok(Json(topology))
+}
+
+async fn get_metrics_history(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<monitaur_core::metrics::MetricsSnapshot>>, (StatusCode, Json<serde_json::Value>)> {
+    check_auth(&state, &headers).await?;
+
+    let db = state.db.lock().await;
+    let history = db.list_metrics_history(60).map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()})))
+    })?;
+    Ok(Json(history))
+}
+
+async fn list_findings(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<SecurityFinding>>, (StatusCode, Json<serde_json::Value>)> {
+    check_auth(&state, &headers).await?;
+
+    let db = state.db.lock().await;
+    let findings = db.list_findings(100, None).map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()})))
+    })?;
+    Ok(Json(findings))
 }

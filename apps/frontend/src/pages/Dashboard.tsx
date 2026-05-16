@@ -1,6 +1,9 @@
-import { useScan, useMetrics, useNetwork } from '../hooks/use-queries'
+import { useScan, useMetrics, useNetwork, useMetricsHistory } from '../hooks/use-queries'
 import { bytesToHuman } from '../lib/utils'
-import { Cpu, HardDrive, Network, Shield, Server, Activity, AlertTriangle } from 'lucide-react'
+import { Cpu, HardDrive, Network, Shield, Server, Activity, AlertTriangle, TrendingUp } from 'lucide-react'
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts'
 
 export function Dashboard() {
   const scan = useScan()
@@ -226,6 +229,59 @@ function MetricBar({ label, value, color }: { label: string; value: number; colo
           className={`h-full rounded-full transition-all duration-500 ${color}`}
           style={{ width: `${Math.min(value, 100)}%` }}
         />
+      </div>
+    </div>
+  )
+}
+
+function HistoryChart() {
+  const { data: history } = useMetricsHistory()
+
+  if (!history || history.length < 2) {
+    return (
+      <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <TrendingUp size={16} className="text-accent-hover" />
+          <h2 className="text-sm font-medium text-zinc-300">CPU & Memory History</h2>
+        </div>
+        <p className="text-xs text-zinc-500">
+          {history && history.length === 1
+            ? 'Collecting data... check back after the next poll cycle.'
+            : 'No historical data yet. Metrics are stored every poll cycle.'}
+        </p>
+      </div>
+    )
+  }
+
+  const data = history
+    .map((s) => ({
+      time: new Date(s.timestamp).toLocaleTimeString(),
+      cpu: s.system ? Math.round(s.system.cpu_percent * 10) / 10 : 0,
+      memory: s.system ? Math.round(s.system.memory_percent * 10) / 10 : 0,
+    }))
+    .reverse()
+
+  return (
+    <div className="bg-surface-2 border border-zinc-800 rounded-xl p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <TrendingUp size={16} className="text-accent-hover" />
+        <h2 className="text-sm font-medium text-zinc-300">CPU & Memory History</h2>
+        <span className="text-xs text-zinc-500 ml-auto">{data.length} data points</span>
+      </div>
+      <div className="h-48">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3e" />
+            <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#71717a' }} interval="preserveStartEnd" />
+            <YAxis tick={{ fontSize: 10, fill: '#71717a' }} domain={[0, 'auto']} />
+            <Tooltip
+              contentStyle={{ background: '#14141f', border: '1px solid #2a2a3e', borderRadius: 8, fontSize: 12 }}
+              labelStyle={{ color: '#e4e4e7' }}
+            />
+            <Line type="monotone" dataKey="cpu" stroke="#818cf8" strokeWidth={2} dot={false} name="CPU %" />
+            <Line type="monotone" dataKey="memory" stroke="#eab308" strokeWidth={2} dot={false} name="Memory %" />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
     </div>
   )

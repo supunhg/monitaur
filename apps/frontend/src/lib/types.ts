@@ -140,6 +140,12 @@ export interface MetricsResponse {
   containers: ContainerMetrics[]
 }
 
+export interface MetricsSnapshot {
+  system: SystemMetrics | null
+  containers: ContainerMetrics[]
+  timestamp: string
+}
+
 export interface ScanResponse {
   discovery: InfraGraph
   security: SecurityFinding[]
