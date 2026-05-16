@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use monitaur_core::models::{InfraGraph, ServiceClass};
 use monitaur_core::visualization::{TopologyEdge, TopologyGraph, TopologyNode};
@@ -104,8 +104,12 @@ impl TopologyGenerator {
             layer_positions.insert(6, idx + 1.0);
         }
 
-        // Edges
+        // Edges — only include edges whose endpoints both exist as nodes
+        let node_ids: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
         for edge in &graph.edges {
+            if !node_ids.contains(edge.source_id.as_str()) || !node_ids.contains(edge.target_id.as_str()) {
+                continue;
+            }
             edges.push(TopologyEdge {
                 id: format!("e_{}_{}", edge.source_id, edge.target_id),
                 source: edge.source_id.clone(),
